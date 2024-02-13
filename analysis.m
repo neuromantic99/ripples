@@ -1,22 +1,22 @@
 
 clear
 
-load('\\128.40.224.64\marcbusche\Jana\Matlab Code\Relevant_Code_Trajectories\overview Tables\overview_table_A_onlyRecsWithRippleData.mat')
+base_path = '';
 
+
+cd('/Users/jamesrowland/Code/ripples')
+
+load('/Volumes/MarcBusche/Jana/Matlab Code/Relevant_Code_Trajectories/overview Tables/overview_table_A_onlyRecsWithRippleData.mat')
 static_vars.genotype = overview_table_A.Genotype;
 static_vars.trajectory = overview_table_A.TrajectoryPrefix;
 static_vars.exp_date = overview_table_A.AnimalID;
 static_vars.timepoint = overview_table_A.Timepoint;
-static_vars.save_dir = '\\128.40.224.64\marcbusche\Jana\Neuropixels\Trajectories\Processed data';   %%%%This is the directory where your pre-proceed data will be saved
+static_vars.save_dir = '/Volumes/MarcBusche/Jana/Neuropixels/Trajectories/Processed data';   %%%%This is the directory where your pre-proceed data will be saved
 static_vars.exp_name = overview_table_A.BaselineNo;
 static_vars.probe_num =overview_table_A.Imec_1_Traj;
 
-
-
-
-
 %%%%%
-load (['\\128.40.224.64\MarcBusche\Matlab Code\NPX Config\long_linear_shank_ChanMapBank01.mat']);
+load(['/Volumes/MarcBusche/Matlab Code/NPX Config/long_linear_shank_ChanMapBank01.mat']);
 swr_vits.depth_axis = [20:20:7680];
 %%%%%
 swr_vits.swr_freq_range = [80 250]; %% Dupret preprint 10/2023
@@ -37,19 +37,19 @@ swr_vits.CARtype = 'Original'; %% either 'Original' (all channels) or 'CA1' for 
 for anim = 1
     for experiment = 2 % [1:length(static_vars.exp_name{anim})]
         for imec_probe = static_vars.probe_num{anim}
-            clallbut imec_probe genotype anim experiment...
-                do_spec swr_vits static_vars baseline
+            % clallbut imec_probe genotype anim experiment...
+            %     do_spec swr_vits static_vars baseline
 
-            rootZ = [static_vars.save_dir '\' static_vars.genotype{anim} static_vars.trajectory{anim} static_vars.exp_date{anim} static_vars.timepoint{anim}];
+            rootZ = [static_vars.save_dir '/' static_vars.genotype{anim} static_vars.trajectory{anim} static_vars.exp_date{anim} static_vars.timepoint{anim}];
             cd (rootZ)
 
             %%% get probe trajectory
-            idcs   = strfind(pwd,'\');
+            idcs   = strfind(pwd,'/');
             newdir = rootZ(1:idcs(end));
             load(['probe_trajectory_details_0603_imec'  num2str(imec_probe)]);%loads in trajectory for each probe
 
             %%% load in bandpower resting state data
-            cd([rootZ '\Baseline' num2str(static_vars.exp_name{anim}(experiment))])
+            cd([rootZ '/Baseline' num2str(static_vars.exp_name{anim}(experiment))])
             load(['lfp_frequency_bands_resting_imec' num2str(imec_probe) '.mat'])
             SWR_pow=freq.SWR_pow_rest;
             SRP_pow=freq.SRP_pow_rest;
