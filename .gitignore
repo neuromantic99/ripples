@@ -1,6 +1,4 @@
-# Big file good not to push to git
-*.csv 
-
+data/
 .DS_Store
 
 # Byte-compiled / optimized / DLL files
