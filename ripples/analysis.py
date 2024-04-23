@@ -32,27 +32,69 @@ def length_check(candidate_events: List[CandidateEvent]) -> List[CandidateEvent]
     return [event for event in candidate_events if event.offset - event.onset > 41]
 
 
-if __name__ == "__main__":
-    lfp = load_lfp(DATA_PATH)
-    lfp[REFERENCE_CHANNEL, :] = 0
+def event_power_check(
+    candidate_events: List[CandidateEvent], comparison_power: np.ndarray
+):
+    return [
+        event
+        for event in candidate_events
+        if event.peak_power >= comparison_power[event.peak_idx] * 2
+    ]
 
-    # The long linear channels are interleaved
-    lfp = np.concatenate((lfp[0::2, :], lfp[1::2, :]), axis=0)
-    lfp = lfp[CA1_channels, :]
 
-    # Trim to match Suraya, remove in future
-    lfp = lfp[:, 6589:1537452]
-
-    lfp = preprocess(lfp)
-    lfp = bandpass_filter(lfp, 125, 250, SAMPLING_RATE)
-    lfp = compute_envelope(lfp)
+def get_candidate_ripples(lfp: np.ndarray) -> List[List[CandidateEvent]]:
+    """Gets candidate ripples from a common average referenced LFP"""
+    ripple_band = compute_envelope(bandpass_filter(lfp, 125, 250, SAMPLING_RATE))
 
     candidate_events: List[List[CandidateEvent]] = []
-    for channel in lfp:
+    for channel in ripple_band:
         candidate_events.append(detect_ripple_events(channel))
+    return candidate_events
+
+
+def filter_candidate_ripples(
+    candidate_events: List[List[CandidateEvent]],
+    lfp: np.ndarray,
+    lfp_raw: np.ndarray,
+) -> List[List[CandidateEvent]]:
 
     candidate_events = [length_check(events) for events in candidate_events]
 
-    num_events = sum(len(events) for events in candidate_events)
+    common_average_power = compute_envelope(
+        bandpass_filter(
+            np.expand_dims(np.mean(lfp_raw, 0), axis=0), 125, 250, SAMPLING_RATE
+        )
+    )
 
-    1 / 0
+    candidate_events = [
+        event_power_check(events, common_average_power.squeeze())
+        for events in candidate_events
+    ]
+
+    supra_ripple_band_power = compute_envelope(
+        bandpass_filter(lfp, 200, 500, SAMPLING_RATE)
+    )
+
+    return [
+        event_power_check(events, supra)
+        for events, supra in zip(candidate_events, supra_ripple_band_power)
+    ]
+
+
+if __name__ == "__main__":
+    lfp_raw = load_lfp(DATA_PATH)
+    lfp_raw[REFERENCE_CHANNEL, :] = 0
+
+    # The long linear channels are interleaved
+    lfp_raw = np.concatenate((lfp_raw[0::2, :], lfp_raw[1::2, :]), axis=0)
+    lfp_raw = lfp_raw[CA1_channels, :]
+
+    # Trim to match Suraya, remove in future
+    lfp_raw = lfp_raw[:, 6589:1537452]
+
+    # Common average reference
+    lfp = preprocess(lfp_raw)
+    candidate_events = get_candidate_ripples(lfp)
+    ripples = filter_candidate_ripples(candidate_events, lfp, lfp_raw)
+
+    num_events = sum(len(events) for events in ripples)

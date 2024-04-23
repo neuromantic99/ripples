@@ -8,6 +8,8 @@ from scipy import signal
 class CandidateEvent:
     onset: int
     offset: int
+    peak_power: int | float
+    peak_idx: int
 
 
 def detect_ripple_events(
@@ -21,11 +23,17 @@ def detect_ripple_events(
     in_event = False
     upper_exceeded = False
     start_event = 0
+    peak_power = -np.inf
 
     for idx, value in enumerate(channel):
+
         if value > lower_threshold and not in_event:
             start_event = idx
             in_event = True
+
+        if in_event and value > peak_power:
+            peak_power = value
+            peak_idx = idx
 
         # If you bounce on the lower threshold
         if value < lower_threshold and in_event and not upper_exceeded:
@@ -37,7 +45,15 @@ def detect_ripple_events(
         if value < lower_threshold and in_event and upper_exceeded:
             in_event = False
             upper_exceeded = False
-            candidate_events.append(CandidateEvent(onset=start_event, offset=idx))
+            candidate_events.append(
+                CandidateEvent(
+                    onset=start_event,
+                    offset=idx,
+                    peak_power=peak_power,
+                    peak_idx=peak_idx,
+                )
+            )
+            peak_power = -np.inf
 
     return candidate_events
 

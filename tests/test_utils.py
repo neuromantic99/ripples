@@ -12,7 +12,7 @@ def test_detect_ripple_events_basic():
         )
     )
     result = detect_ripple_events(data)
-    assert result == [CandidateEvent(onset=1, offset=8)]
+    assert result == [CandidateEvent(onset=1, offset=8, peak_idx=4, peak_power=10)]
 
 
 def test_detect_ripple_events_basic_two_events():
@@ -26,8 +26,8 @@ def test_detect_ripple_events_basic_two_events():
     )
     result = detect_ripple_events(data)
     assert result == [
-        CandidateEvent(onset=1, offset=8),
-        CandidateEvent(onset=11, offset=18),
+        CandidateEvent(onset=1, offset=8, peak_idx=4, peak_power=10),
+        CandidateEvent(onset=11, offset=18, peak_idx=14, peak_power=10),
     ]
 
 
@@ -52,7 +52,7 @@ def test_detect_ripple_events_bounces_on_upper():
         )
     )
     result = detect_ripple_events(data)
-    assert result == [CandidateEvent(onset=1, offset=6)]
+    assert result == [CandidateEvent(onset=1, offset=6, peak_idx=2, peak_power=6)]
 
 
 def test_detect_ripple_events_bounces_on_lower():
@@ -64,7 +64,7 @@ def test_detect_ripple_events_bounces_on_lower():
         )
     )
     result = detect_ripple_events(data)
-    assert result == [CandidateEvent(onset=3, offset=6)]
+    assert result == [CandidateEvent(onset=3, offset=6, peak_idx=4, peak_power=6)]
 
 
 def test_detect_ripple_events_jumps_to_upper():
@@ -76,7 +76,7 @@ def test_detect_ripple_events_jumps_to_upper():
         )
     )
     result = detect_ripple_events(data)
-    assert result == [CandidateEvent(onset=0, offset=4)]
+    assert result == [CandidateEvent(onset=0, offset=4, peak_idx=0, peak_power=6)]
 
 
 def test_detect_ripple_events_ends_during_ripple():
@@ -88,7 +88,9 @@ def test_detect_ripple_events_ends_during_ripple():
         )
     )
     result = detect_ripple_events(data)
-    assert result == [CandidateEvent(onset=2 + 30, offset=4 + 30)]
+    assert result == [
+        CandidateEvent(onset=2 + 30, offset=4 + 30, peak_idx=3 + 30, peak_power=6)
+    ]
 
 
 def test_detect_ripple_events_starts_during_ripple():
@@ -99,14 +101,14 @@ def test_detect_ripple_events_starts_during_ripple():
 
     data = np.concatenate(
         (
-            np.array([6, 6, 3, 2, 3, 6, 6, 4, 3, 2]),
+            np.array([6, 6, 3, 2, 3, 6, 7, 4, 3, 2]),
             np.ones(30),  # load of ones to make the median 1
         )
     )
     result = detect_ripple_events(data)
     assert result == [
-        CandidateEvent(onset=0, offset=3),
-        CandidateEvent(onset=4, offset=9),
+        CandidateEvent(onset=0, offset=3, peak_idx=0, peak_power=6),
+        CandidateEvent(onset=4, offset=9, peak_idx=6, peak_power=7),
     ]
 
 
