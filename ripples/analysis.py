@@ -1,24 +1,37 @@
 from typing import List
 import numpy as np
 from scipy import signal
+from pathlib import Path
 
+from gsheets_importer import gsheet2df
 from utils import CandidateEvent, bandpass_filter, detect_ripple_events
 
 from utils_npyx import load_lfp
 
-from consts import CA1_channels
+from consts import aligned_regions
+
+import mat73
 
 REFERENCE_CHANNEL = 191  # For the long linear, change depending on probe
-DATA_PATH = "data/031123_g0_imec0"
-DATA_PATH_MAT = "data/lfp_data_noCAR_fin_imec1.mat"
 
-CA1_channels = [channel - 1 for channel in CA1_channels]
+
+UMBRELLA = Path("/Users/jamesrowland/Documents/data/")
+SESSION = "NLGF_A_1393311_3M"
+RECORDING_NAME = "baseline1"
+PROBE = "1"
+
+
+# TODO: Get this from the probe details
+CA1_channels = [
+    348 - idx for idx, region in enumerate(aligned_regions) if region == "Field CA1"
+]
+
 
 SAMPLING_RATE = 2500
 
 
 def preprocess(lfp: np.ndarray) -> np.ndarray:
-    """Sam also centers the data"""
+    """Center and decimate, check what preprocessing is necessary"""
     # lfp = signal.decimate(lfp, 2)
     return lfp - np.mean(lfp, 0)
 
@@ -45,11 +58,7 @@ def event_power_check(
 def get_candidate_ripples(lfp: np.ndarray) -> List[List[CandidateEvent]]:
     """Gets candidate ripples from a common average referenced LFP"""
     ripple_band = compute_envelope(bandpass_filter(lfp, 125, 250, SAMPLING_RATE))
-
-    candidate_events: List[List[CandidateEvent]] = []
-    for channel in ripple_band:
-        candidate_events.append(detect_ripple_events(channel))
-    return candidate_events
+    return [detect_ripple_events(channel) for channel in ripple_band]
 
 
 def filter_candidate_ripples(
@@ -82,15 +91,27 @@ def filter_candidate_ripples(
 
 
 if __name__ == "__main__":
-    lfp_raw = load_lfp(DATA_PATH)
+
+    metadata = gsheet2df("1HSERPbm-kDhe6X8bgflxvTuK24AfdrZJzbdBy11Hpcg", "Sheet1", 1)
+
+    metadata_probe = metadata[
+        (metadata["Session"] == SESSION)
+        & (metadata["Recording Name"] == RECORDING_NAME)
+        & (metadata["Probe"] == PROBE)
+    ]
+    lfp_path = metadata_probe["LFP path"].values[0]
+
+    probe_details_path = metadata_probe["Probe Details Path"].values[0]
+
+    lfp_raw = load_lfp(UMBRELLA / lfp_path)
+
+    probe_details = mat73.loadmat(UMBRELLA / probe_details_path)
+
     lfp_raw[REFERENCE_CHANNEL, :] = 0
 
     # The long linear channels are interleaved
     lfp_raw = np.concatenate((lfp_raw[0::2, :], lfp_raw[1::2, :]), axis=0)
     lfp_raw = lfp_raw[CA1_channels, :]
-
-    # Trim to match Suraya, remove in future
-    lfp_raw = lfp_raw[:, 6589:1537452]
 
     # Common average reference
     lfp = preprocess(lfp_raw)
@@ -98,3 +119,5 @@ if __name__ == "__main__":
     ripples = filter_candidate_ripples(candidate_events, lfp, lfp_raw)
 
     num_events = sum(len(events) for events in ripples)
+
+    1 / 0

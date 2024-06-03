@@ -1,3 +1,9 @@
+from pathlib import Path
+
+HERE = Path(__file__).parent
+
+
+# For Suraya's data
 CA1_channels = [
     176,
     177,

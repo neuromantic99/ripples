@@ -1,3 +1,12 @@
+
+credentials.json
+token.pickle
+
+# Don't think we'll want to track any matlab stuff
+*.mat
+*.m
+
+
 data/
 .DS_Store
 
