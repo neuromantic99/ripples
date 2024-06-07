@@ -1,0 +1,52 @@
+from typing import List
+
+import numpy as np
+
+from ripples.utils import CandidateEvent, bandpass_filter, compute_envelope
+
+
+def length_check(candidate_events: List[CandidateEvent]) -> List[CandidateEvent]:
+    return [event for event in candidate_events if event.offset - event.onset > 41]
+
+
+def event_power_check(
+    candidate_events: List[CandidateEvent], comparison_power: np.ndarray
+):
+    return [
+        event
+        for event in candidate_events
+        if event.peak_power >= comparison_power[event.peak_idx] * 2
+    ]
+
+
+def filter_candidate_ripples(
+    candidate_events: List[List[CandidateEvent]],
+    lfp: np.ndarray,
+    common_average: np.ndarray,
+    sampling_rate: int,
+) -> List[List[CandidateEvent]]:
+
+    assert (
+        len(candidate_events) == lfp.shape[0]
+        and lfp.shape[1] == common_average.shape[0]
+    )
+
+    candidate_events = [length_check(events) for events in candidate_events]
+
+    common_average_power = compute_envelope(
+        bandpass_filter(np.expand_dims(common_average, axis=0), 125, 250, sampling_rate)
+    )
+
+    candidate_events = [
+        event_power_check(events, common_average_power.squeeze())
+        for events in candidate_events
+    ]
+
+    supra_ripple_band_power = compute_envelope(
+        bandpass_filter(lfp, 200, 500, sampling_rate)
+    )
+
+    return [
+        event_power_check(events, supra)
+        for events, supra in zip(candidate_events, supra_ripple_band_power)
+    ]

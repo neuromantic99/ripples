@@ -1,15 +1,17 @@
-from dataclasses import dataclass
 from typing import List
+
 import numpy as np
 from scipy import signal
 
+from ripples.models import CandidateEvent
 
-@dataclass
-class CandidateEvent:
-    onset: int
-    offset: int
-    peak_power: int | float
-    peak_idx: int
+
+def get_candidate_ripples(
+    lfp: np.ndarray, sampling_rate: int
+) -> List[List[CandidateEvent]]:
+    """Gets candidate ripples from a common average referenced LFP"""
+    ripple_band = compute_envelope(bandpass_filter(lfp, 125, 250, sampling_rate))
+    return [detect_ripple_events(channel) for channel in ripple_band]
 
 
 def detect_ripple_events(
@@ -63,3 +65,16 @@ def bandpass_filter(
 ) -> np.ndarray:
     b, a = signal.butter(4, Wn=[low, high], fs=sampling_rate, btype="bandpass")
     return signal.filtfilt(b, a, lfp, axis=1)
+
+
+def compute_envelope(lfp: np.ndarray) -> np.ndarray:
+    hilbert_transformed = signal.hilbert(lfp, axis=1)
+    return np.abs(hilbert_transformed)
+
+
+def shuffle(x: np.ndarray) -> np.ndarray:
+    """shuffles along all dimensions of an array"""
+    shape = x.shape
+    x = np.ravel(x)
+    np.random.shuffle(x)
+    return x.reshape(shape)

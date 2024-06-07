@@ -4,7 +4,7 @@ import numpy as np
 """Put the npyx import into its own file as it confuses pytest"""
 
 
-def load_lfp(data_path: str) -> np.ndarray:
+def load_lfp_npyx(data_path: str) -> np.ndarray:
     meta = read_metadata(data_path)
     return extract_rawChunk(
         data_path,

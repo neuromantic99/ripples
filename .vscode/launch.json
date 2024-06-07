@@ -5,7 +5,7 @@
         "name": "run analysis.py",
         "type": "debugpy",
         "request": "launch",
-        "program": "ripples/analysis.py",
+        "program": "run.py",
         "console": "integratedTerminal",
         "justMyCode": true
       },
