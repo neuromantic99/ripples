@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 
 import numpy as np
+from pydantic import BaseModel, computed_field
+from ripples.consts import SAMPLING_RATE_LFP
 
 
 @dataclass
@@ -9,10 +11,13 @@ class SpikesSession:
     spike_times: np.ndarray
 
 
-@dataclass
-class CandidateEvent:
+class CandidateEvent(BaseModel):
     onset: int
     offset: int
     peak_power: int | float
     peak_idx: int
-    # peak_time: float
+
+    @computed_field
+    @property
+    def peak_time(self) -> float:
+        return self.peak_idx / SAMPLING_RATE_LFP

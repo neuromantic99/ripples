@@ -1,5 +1,4 @@
 from typing import List
-
 import numpy as np
 
 from ripples.utils import CandidateEvent, bandpass_filter, compute_envelope
@@ -50,3 +49,42 @@ def filter_candidate_ripples(
         event_power_check(events, supra)
         for events, supra in zip(candidate_events, supra_ripple_band_power)
     ]
+
+
+def count_spikes_around_ripple(
+    ripple: CandidateEvent, spike_times: np.ndarray, padding: float, num_bins: int
+) -> np.ndarray:
+
+    spike_times = spike_times[
+        np.logical_and(
+            spike_times > (ripple.peak_time - padding),
+            spike_times < (ripple.peak_time + padding),
+        )
+    ]
+
+    counts, _ = np.histogram(spike_times, bins=num_bins)
+    return counts
+
+
+def remove_duplicate_ripples(
+    ripples: List[CandidateEvent], min_distance_seconds: float
+) -> List[CandidateEvent]:
+    """TODO: This is very ineffecient."""
+
+    filtered_ripples: List[CandidateEvent] = []
+
+    for i in range(len(ripples)):
+        keep = True
+        for j in range(len(ripples)):
+            if i == j:
+                continue
+            if (
+                abs(ripples[i].peak_time - ripples[j].peak_time) < min_distance_seconds
+                and ripples[i].peak_power < ripples[j].peak_power
+            ):
+                keep = False
+                break
+        if keep:
+            filtered_ripples.append(ripples[i])
+
+    return filtered_ripples

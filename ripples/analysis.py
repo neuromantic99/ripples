@@ -10,10 +10,16 @@ import mat73
 from matplotlib import pyplot as plt
 import numpy as np
 import pandas as pd
+from scipy import io
+from ripples.consts import SAMPLING_RATE_LFP
 from ripples.gsheets_importer import gsheet2df
 from ripples.models import SpikesSession
-from ripples.plotting import plot_ripples
-from ripples.ripple_detection import filter_candidate_ripples
+from ripples.plotting import plot_lfp, plot_ripples, plot_spikes_per_region
+from ripples.ripple_detection import (
+    count_spikes_around_ripple,
+    filter_candidate_ripples,
+    remove_duplicate_ripples,
+)
 from ripples.utils import bandpass_filter, get_candidate_ripples
 from ripples.utils_npyx import load_lfp_npyx
 
@@ -21,12 +27,9 @@ REFERENCE_CHANNEL = 191  # For the long linear, change depending on probe
 
 
 UMBRELLA = Path("/Users/jamesrowland/Documents/data/")
-SESSION = "NLGF_A_1393311_3M"
+SESSION = "WT_A_1397747_3M"
 RECORDING_NAME = "baseline1"
 PROBE = "1"
-
-
-SAMPLING_RATE = 2500
 
 
 def preprocess(lfp: np.ndarray) -> np.ndarray:
@@ -63,28 +66,27 @@ def load_spikes(metadata_probe: pd.DataFrame) -> SpikesSession:
     spike_times = spike_times / params.sample_rate
 
     channel_lookup = dict(zip(cluster_info["cluster_id"], cluster_info["ch"]))
-    spike_channels_map = Counter(
-        [channel_lookup[cluster] for cluster in spike_clusters]
-    )
-    spike_channels_map.update(
-        {idx: 0 for idx in range(384) if idx not in spike_channels_map}
-    )
-    spike_channels = np.array(
-        [spike_channels_map[idx] for idx in sorted(spike_channels_map.keys())]
-    )
-    spike_channels = np.concatenate((spike_channels[::2], spike_channels[1::2]), axis=0)
-
+    spike_channels = np.array([channel_lookup[cluster] for cluster in spike_clusters])
     return SpikesSession(spike_times=spike_times, spike_channels=spike_channels)
 
 
 def get_region_channels(metadata_probe: pd.DataFrame):
     probe_details_path = metadata_probe["Probe Details Path"].values[0]
-    probe_details = mat73.loadmat(UMBRELLA / probe_details_path)["probe_details"]
+    try:
+        mat_file = mat73.loadmat(UMBRELLA / probe_details_path)
+        probe_details = mat_file["probe_details"]
+        region_channel = [
+            region[0] if region[0] is not None else "None"
+            for region in probe_details["alignedregions"]
+        ]
+    except TypeError:
+        mat_file = io.loadmat(UMBRELLA / probe_details_path)
+        # Scipy loads this in a cracked out way
+        regions = mat_file["probe_details"]["alignedregions"][0][0]
+        region_channel = [
+            region[0][0] if len(region[0][0]) > 0 else "None" for region in regions
+        ]
 
-    region_channel = [
-        region[0] if region[0] is not None else "None"
-        for region in probe_details["alignedregions"]
-    ]
     # I think the channels are reversed relative to the probe according to Jana's code.
     # Checked with plotting
     return list(reversed(region_channel))
@@ -113,18 +115,47 @@ def main():
     # plot_spikes_per_region(spike_session, region_channel, plot_all_channels=True)
 
     candidate_events = get_candidate_ripples(
-        lfp[CA1_channels, :], sampling_rate=SAMPLING_RATE
+        lfp[CA1_channels, :], sampling_rate=SAMPLING_RATE_LFP
     )
 
     common_average = np.mean(lfp[CA1_channels, :], axis=0)
 
     ripples = filter_candidate_ripples(
-        candidate_events, lfp[CA1_channels, :], common_average, SAMPLING_RATE
+        candidate_events, lfp[CA1_channels, :], common_average, SAMPLING_RATE_LFP
     )
 
-    num_events = sum(len(events) for events in ripples)
-    print(f"Number of events: {num_events}")
+    # filtered = bandpass_filter(lfp[CA1_channels, :], 125, 250, SAMPLING_RATE)
+    # plot_ripples(ripples, filtered)
+    # plt.show()
 
-    filtered = bandpass_filter(lfp[CA1_channels, :], 125, 250, SAMPLING_RATE)
-    plot_ripples(ripples, filtered)
-    plt.show()
+    # Flattening makes further processing easier but loses the channel information
+    ripples = [event for events in ripples for event in events]
+    ripples = remove_duplicate_ripples(ripples, 0.3)
+
+    CA1_spike_times = spike_session.spike_times[
+        np.isin(spike_session.spike_channels, CA1_channels)
+    ]
+
+    padding = 1
+    n_bins = 50
+    spike_count = np.array(
+        [
+            count_spikes_around_ripple(
+                ripple, spike_session.spike_times, padding, num_bins=n_bins
+            )
+            for ripple in ripples
+        ]
+    )
+
+    plt.plot(np.mean(spike_count, axis=0))
+
+    # Make this an odd number
+    n_ticks = 11
+
+    plt.xticks(
+        np.linspace(0, n_bins, n_ticks),
+        np.round(np.linspace(-padding, padding, n_ticks), 1),
+    )
+    plt.xlabel("Time from ripple (s)")
+
+    1 / 0
