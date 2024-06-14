@@ -1,19 +1,21 @@
 import importlib
+import json
 from pathlib import Path
 
 
 from collections import Counter
 from pathlib import Path
 import sys
+from typing import List
 
 import mat73
 from matplotlib import pyplot as plt
 import numpy as np
 import pandas as pd
 from scipy import io
-from ripples.consts import SAMPLING_RATE_LFP
+from ripples.consts import HERE, SAMPLING_RATE_LFP
 from ripples.gsheets_importer import gsheet2df
-from ripples.models import SpikesSession
+from ripples.models import Result, SpikesSession
 from ripples.plotting import plot_lfp, plot_ripples, plot_spikes_per_region
 from ripples.ripple_detection import (
     count_spikes_around_ripple,
@@ -70,7 +72,7 @@ def load_spikes(metadata_probe: pd.DataFrame) -> SpikesSession:
     return SpikesSession(spike_times=spike_times, spike_channels=spike_channels)
 
 
-def get_region_channels(metadata_probe: pd.DataFrame):
+def get_region_channels(metadata_probe: pd.DataFrame) -> List[str]:
     probe_details_path = metadata_probe["Probe Details Path"].values[0]
     try:
         mat_file = mat73.loadmat(UMBRELLA / probe_details_path)
@@ -132,30 +134,55 @@ def main():
     ripples = [event for events in ripples for event in events]
     ripples = remove_duplicate_ripples(ripples, 0.3)
 
-    CA1_spike_times = spike_session.spike_times[
-        np.isin(spike_session.spike_channels, CA1_channels)
-    ]
+    padding = 2
+    n_bins = 200
 
-    padding = 1
-    n_bins = 50
-    spike_count = np.array(
-        [
+    areas = ["retrosplenial", "dentate", "ca1"]
+    # TODO: clean up the type
+    result = {}
+
+    for area in areas:
+
+        channels_keep = [
+            idx
+            for idx, region in enumerate(region_channel)
+            if region is not None and area in region.lower()
+        ]
+
+        spike_times = spike_session.spike_times[
+            np.isin(spike_session.spike_channels, channels_keep)
+        ]
+
+        spike_count = [
             count_spikes_around_ripple(
-                ripple, spike_session.spike_times, padding, num_bins=n_bins
+                ripple=ripple,
+                spike_times=spike_times,
+                padding=padding,
+                num_bins=n_bins,
             )
             for ripple in ripples
         ]
-    )
 
-    plt.plot(np.mean(spike_count, axis=0))
+        result[area] = spike_count
 
-    # Make this an odd number
-    n_ticks = 11
+    result["ripple_power"] = [ripple.peak_power for ripple in ripples]
 
-    plt.xticks(
-        np.linspace(0, n_bins, n_ticks),
-        np.round(np.linspace(-padding, padding, n_ticks), 1),
-    )
-    plt.xlabel("Time from ripple (s)")
+    Result.model_validate(result)
 
-    1 / 0
+    with open(
+        HERE.parent / "results" / f"{SESSION}-{RECORDING_NAME}-{PROBE}.json", "w"
+    ) as f:
+        json.dump(result, f)
+
+    # plt.plot(np.mean(spike_count, axis=0))
+    # # Make this an odd number
+
+    # n_ticks = 11
+    # # This might be off by one, so be very careful if doing super precise alignment to 0
+    # plt.xticks(
+    #     np.linspace(0, n_bins, n_ticks),
+    #     np.round(np.linspace(-padding, padding, n_ticks), 1),
+    # )
+
+    # plt.axvline(spike_count.shape[1] / 2, color="black", linestyle="--")
+    # plt.xlabel("Time from ripple (s)")

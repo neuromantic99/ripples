@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import List
 
 import numpy as np
 from pydantic import BaseModel, computed_field
@@ -21,3 +22,10 @@ class CandidateEvent(BaseModel):
     @property
     def peak_time(self) -> float:
         return self.peak_idx / SAMPLING_RATE_LFP
+
+
+class Result(BaseModel):
+    retrosplenial: List[List[int]]
+    dentate: List[List[int]]
+    ca1: List[List[int]]
+    ripple_power: List[float]

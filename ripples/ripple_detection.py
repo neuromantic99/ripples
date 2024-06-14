@@ -53,7 +53,7 @@ def filter_candidate_ripples(
 
 def count_spikes_around_ripple(
     ripple: CandidateEvent, spike_times: np.ndarray, padding: float, num_bins: int
-) -> np.ndarray:
+) -> List[float]:
 
     spike_times = spike_times[
         np.logical_and(
@@ -63,13 +63,13 @@ def count_spikes_around_ripple(
     ]
 
     counts, _ = np.histogram(spike_times, bins=num_bins)
-    return counts
+    return list(counts.astype(float))
 
 
 def remove_duplicate_ripples(
     ripples: List[CandidateEvent], min_distance_seconds: float
 ) -> List[CandidateEvent]:
-    """TODO: This is very ineffecient."""
+    """TODO: This is very ineffecient and will break if peak power is exactly the same across two ripples"""
 
     filtered_ripples: List[CandidateEvent] = []
 
