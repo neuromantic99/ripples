@@ -29,9 +29,6 @@ REFERENCE_CHANNEL = 191  # For the long linear, change depending on probe
 
 
 UMBRELLA = Path("/Users/jamesrowland/Documents/data/")
-SESSION = "WT_A_1397747_3M"
-RECORDING_NAME = "baseline1"
-PROBE = "1"
 
 
 def preprocess(lfp: np.ndarray) -> np.ndarray:
@@ -94,13 +91,13 @@ def get_region_channels(metadata_probe: pd.DataFrame) -> List[str]:
     return list(reversed(region_channel))
 
 
-def main():
+def cache_ripple_result(session: str, recording_name: str, probe: str) -> None:
 
     metadata = gsheet2df("1HSERPbm-kDhe6X8bgflxvTuK24AfdrZJzbdBy11Hpcg", "Sheet1", 1)
     metadata_probe = metadata[
-        (metadata["Session"] == SESSION)
-        & (metadata["Recording Name"] == RECORDING_NAME)
-        & (metadata["Probe"] == PROBE)
+        (metadata["Session"] == session)
+        & (metadata["Recording Name"] == recording_name)
+        & (metadata["Probe"] == probe)
     ]
 
     region_channel = get_region_channels(metadata_probe)
@@ -113,35 +110,25 @@ def main():
         if region is not None and "CA1" in region
     ]
 
-    # plot_lfp(lfp, region_channel)
-    # plot_spikes_per_region(spike_session, region_channel, plot_all_channels=True)
-
     candidate_events = get_candidate_ripples(
         lfp[CA1_channels, :], sampling_rate=SAMPLING_RATE_LFP
     )
 
     common_average = np.mean(lfp[CA1_channels, :], axis=0)
 
-    ripples = filter_candidate_ripples(
+    ripples_channels = filter_candidate_ripples(
         candidate_events, lfp[CA1_channels, :], common_average, SAMPLING_RATE_LFP
     )
 
-    # filtered = bandpass_filter(lfp[CA1_channels, :], 125, 250, SAMPLING_RATE)
-    # plot_ripples(ripples, filtered)
-    # plt.show()
-
     # Flattening makes further processing easier but loses the channel information
-    ripples = [event for events in ripples for event in events]
+    ripples = [event for events in ripples_channels for event in events]
     ripples = remove_duplicate_ripples(ripples, 0.3)
 
     padding = 2
     n_bins = 200
 
-    areas = ["retrosplenial", "dentate", "ca1"]
-    # TODO: clean up the type
     result = {}
-
-    for area in areas:
+    for area in ["retrosplenial", "dentate", "ca1"]:
 
         channels_keep = [
             idx
@@ -170,19 +157,13 @@ def main():
     Result.model_validate(result)
 
     with open(
-        HERE.parent / "results" / f"{SESSION}-{RECORDING_NAME}-{PROBE}.json", "w"
+        HERE.parent / "results" / f"{session}-{recording_name}-{probe}.json", "w"
     ) as f:
         json.dump(result, f)
 
-    # plt.plot(np.mean(spike_count, axis=0))
-    # # Make this an odd number
 
-    # n_ticks = 11
-    # # This might be off by one, so be very careful if doing super precise alignment to 0
-    # plt.xticks(
-    #     np.linspace(0, n_bins, n_ticks),
-    #     np.round(np.linspace(-padding, padding, n_ticks), 1),
-    # )
-
-    # plt.axvline(spike_count.shape[1] / 2, color="black", linestyle="--")
-    # plt.xlabel("Time from ripple (s)")
+def main():
+    session = "WT_A_1397747_3M"
+    recording_name = "baseline1"
+    probe = "1"
+    cache_ripple_result(session, recording_name, probe)

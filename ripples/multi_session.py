@@ -15,3 +15,16 @@ def main():
     plt.plot(np.mean(result.dentate, axis=0), color="blue")
     plt.plot(np.mean(result.ca1, axis=0), color="black")
     plt.show()
+
+    # plt.plot(np.mean(spike_count, axis=0))
+    # # Make this an odd number
+
+    # n_ticks = 11
+    # # This might be off by one, so be very careful if doing super precise alignment to 0
+    # plt.xticks(
+    #     np.linspace(0, n_bins, n_ticks),
+    #     np.round(np.linspace(-padding, padding, n_ticks), 1),
+    # )
+
+    # plt.axvline(spike_count.shape[1] / 2, color="black", linestyle="--")
+    # plt.xlabel("Time from ripple (s)")
