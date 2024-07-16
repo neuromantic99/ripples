@@ -24,7 +24,7 @@ class CandidateEvent(BaseModel):
         return self.peak_idx / SAMPLING_RATE_LFP
 
 
-class Result(BaseModel):
+class RipplesSummary(BaseModel):
     retrosplenial: List[List[int]]
     dentate: List[List[int]]
     ca1: List[List[int]]

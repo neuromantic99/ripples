@@ -13,7 +13,7 @@ import pandas as pd
 from scipy import io
 from ripples.consts import HERE, SAMPLING_RATE_LFP
 from ripples.gsheets_importer import gsheet2df
-from ripples.models import Result, RotaryEncoder, SpikesSession
+from ripples.models import RipplesSummary, RotaryEncoder, SpikesSession
 from ripples.ripple_detection import (
     count_spikes_around_ripple,
     filter_candidate_ripples,
@@ -190,7 +190,7 @@ def cache_ripple_result(session: str, recording_name: str, probe: str) -> None:
 
     result["ripple_power"] = [ripple.peak_power for ripple in ripples]
 
-    Result.model_validate(result)
+    RipplesSummary.model_validate(result)
 
     with open(
         HERE.parent / "results" / f"{session}-{recording_name}-Probe{probe}.json", "w"

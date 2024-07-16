@@ -5,7 +5,7 @@ from pathlib import Path
 from scipy.stats import zscore
 
 from ripples.consts import HERE
-from ripples.models import Result
+from ripples.models import RipplesSummary
 import seaborn as sns
 
 sns.set_theme(context="talk", style="ticks")
@@ -13,10 +13,8 @@ sns.set_theme(context="talk", style="ticks")
 
 RESULTS_PATH = HERE.parent / "results"
 
-""" Everything here is in a beta phase and needs considering and testing"""
 
-
-def get_ripple_rate(result: Result) -> float:
+def get_ripple_rate(result: RipplesSummary) -> float:
 
     # Assumes recording 10 minutes long. Change me
     resting_seconds = (10 * 60) * result.resting_percentage
@@ -24,7 +22,9 @@ def get_ripple_rate(result: Result) -> float:
     return len(result.ripple_power) / resting_seconds
 
 
-def number_of_ripples_plot(WTs: List[Result], NLGFs: List[Result]) -> None:
+def number_of_ripples_plot(
+    WTs: List[RipplesSummary], NLGFs: List[RipplesSummary]
+) -> None:
 
     plt.figure()
     sns.boxplot(
@@ -38,13 +38,11 @@ def number_of_ripples_plot(WTs: List[Result], NLGFs: List[Result]) -> None:
     plt.savefig(HERE.parent / "figures" / "resting_ripple_rate.png")
 
 
-def ripple_power_plot(WTs: List[Result], NLGFs: List[Result]) -> None:
+def ripple_power_plot(WTs: List[RipplesSummary], NLGFs: List[RipplesSummary]) -> None:
 
     plt.figure()
     sns.boxplot(
         {
-            # "WTs": flatten([result.ripple_power for result in WTs]),
-            # "NLGFs": flatten([result.ripple_power for result in NLGFs]),
             "WTs": (np.mean(result.ripple_power) for result in WTs),
             "NLGFs": (np.mean(result.ripple_power) for result in NLGFs),
         }
@@ -55,28 +53,33 @@ def ripple_power_plot(WTs: List[Result], NLGFs: List[Result]) -> None:
     plt.savefig(HERE.parent / "figures" / "resting_ripple_power.png")
 
 
-def process_session(session: List[List[float]], bin_sum: int = 2) -> np.ndarray:
-    stacked = np.vstack(session)
-    reshaped_array = stacked.reshape(stacked.shape[0], -1, bin_sum)
-    # # Sum along the last axis to get the sums of pairs
-    summed_array = np.sum(reshaped_array, axis=-1)
-    mean_across_trials = np.mean(summed_array, axis=0)
+def smooth_ripple_triggered_average(
+    stacked_trials: np.ndarray, bin_sum: int
+) -> np.ndarray:
+    reshaped_array = stacked_trials.reshape(stacked_trials.shape[0], -1, bin_sum)
+    # Sum along the last axis to get the sums of pairs
+    return np.sum(reshaped_array, axis=-1)
+
+
+def process_ripple_triggered_average_session(session: List[List[int]]) -> np.ndarray:
+    """The error in the mean needs to be considered here"""
+    stacked_trials = np.vstack(session)
+
+    # Removed for now for simplicity
+    stacked_trials = smooth_ripple_triggered_average(stacked_trials, 2)
+
+    mean_across_trials = np.mean(stacked_trials, axis=0)
     return zscore(mean_across_trials)
 
 
 def plot_ripple_triggered_spikes(
-    data: List[List[List[float]]], region: str, color: str
+    data: List[List[List[int]]], region: str, color: str
 ) -> None:
-    """This datatype is quite crazy"""
+    """Data is a List of sessions with a list of trials with a list of spike times. Quite a crazy datatype"""
 
-    means = np.vstack([process_session(session, 2) for session in data])
-
-    # means = np.vstack([zscore(np.mean(np.vstack(session), axis=0)) for session in data])
-    # assert means.shape[0] == len(data )
-
-    # reshaped_array = means.reshape(means.shape[0], -1, 2)
-    # # Sum along the last axis to get the sums of pairs
-    # summed_array = np.sum(reshaped_array, axis=-1)
+    means = np.vstack(
+        [process_ripple_triggered_average_session(session) for session in data]
+    )
 
     padding_seconds = 2  # From analysis.py
     plt.plot(
@@ -96,33 +99,10 @@ def plot_ripple_triggered_spikes(
 
     plt.xlim(-1.5, 1.5)
 
-    # n_ticks = 5  # This might be off by one, so be very careful if doing super precise alignment to 0
-    # n = means.shape[1]
 
-
-def main() -> None:
-
-    results_files = Path(RESULTS_PATH).glob("*.json")
-    WTs: List[Result] = []
-    NLGFs: List[Result] = []
-
-    for file in results_files:
-
-        if "3M" not in file.name and "4M" not in file.name:
-            continue
-
-        with open(file) as f:
-            result = Result.model_validate_json(f.read())
-
-        if "wt" in file.name.lower():
-            WTs.append(result)
-        elif "nlgf" in file.name.lower():
-            NLGFs.append(result)
-        else:
-            raise ValueError(f"Unknown type of recording: {file.name}")
-
-    # number_of_ripples_plot(WTs, NLGFs)
-    # ripple_power_plot(WTs, NLGFs)
+def plot_grand_ripple_triggered_average(
+    WTs: List[RipplesSummary], NLGFs: List[RipplesSummary]
+) -> None:
 
     plt.figure(figsize=(4 * 3, 4))
     plt.subplot(1, 3, 1)
@@ -150,3 +130,29 @@ def main() -> None:
     plt.savefig(HERE.parent / "figures" / "ripple_triggered_spikes.png")
 
     plt.show()
+
+
+def main() -> None:
+
+    results_files = Path(RESULTS_PATH).glob("*.json")
+    WTs: List[RipplesSummary] = []
+    NLGFs: List[RipplesSummary] = []
+
+    for file in results_files:
+
+        if "3M" not in file.name and "4M" not in file.name:
+            continue
+
+        with open(file) as f:
+            result = RipplesSummary.model_validate_json(f.read())
+
+        if "wt" in file.name.lower():
+            WTs.append(result)
+        elif "nlgf" in file.name.lower():
+            NLGFs.append(result)
+        else:
+            raise ValueError(f"Unknown type of recording: {file.name}")
+
+    # number_of_ripples_plot(WTs, NLGFs)
+    # ripple_power_plot(WTs, NLGFs)
+    plot_grand_ripple_triggered_average(WTs, NLGFs)

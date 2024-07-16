@@ -1,3 +1,3 @@
-from ripples.analysis import main
+from ripples.multi_session import main
 
 main()
