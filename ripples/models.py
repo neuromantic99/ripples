@@ -29,3 +29,10 @@ class Result(BaseModel):
     dentate: List[List[int]]
     ca1: List[List[int]]
     ripple_power: List[float]
+    resting_percentage: float
+
+
+@dataclass
+class RotaryEncoder:
+    time: np.ndarray
+    speed: np.ndarray

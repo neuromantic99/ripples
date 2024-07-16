@@ -3,32 +3,31 @@ import json
 from pathlib import Path
 
 
-from collections import Counter
 from pathlib import Path
 import sys
-from typing import List
+from typing import Any, Dict, List
 
 import mat73
-from matplotlib import pyplot as plt
 import numpy as np
 import pandas as pd
 from scipy import io
 from ripples.consts import HERE, SAMPLING_RATE_LFP
 from ripples.gsheets_importer import gsheet2df
-from ripples.models import Result, SpikesSession
-from ripples.plotting import plot_lfp, plot_ripples, plot_spikes_per_region
+from ripples.models import Result, RotaryEncoder, SpikesSession
 from ripples.ripple_detection import (
     count_spikes_around_ripple,
     filter_candidate_ripples,
+    get_candidate_ripples,
+    get_resting_ripples,
     remove_duplicate_ripples,
 )
-from ripples.utils import bandpass_filter, get_candidate_ripples
+
+from ripples.utils import degrees_to_cm
 from ripples.utils_npyx import load_lfp_npyx
 
 REFERENCE_CHANNEL = 191  # For the long linear, change depending on probe
 
-
-UMBRELLA = Path("/Users/jamesrowland/Documents/data/")
+UMBRELLA = Path("/Volumes/MarcBusche/Jana/Neuropixels")
 
 
 def preprocess(lfp: np.ndarray) -> np.ndarray:
@@ -69,6 +68,31 @@ def load_spikes(metadata_probe: pd.DataFrame) -> SpikesSession:
     return SpikesSession(spike_times=spike_times, spike_channels=spike_channels)
 
 
+def load_rotary_encoder(metadata_probe: pd.DataFrame) -> RotaryEncoder:
+    """scipy io loads this in an insane way"""
+    rotary_encoder = io.loadmat(
+        UMBRELLA / metadata_probe["Rotary encoder path"].values[0]
+    )["data"][0][0]
+    n = rotary_encoder[0][0][0]
+    positions = rotary_encoder[1][0]
+    time = rotary_encoder[2][0]
+    assert np.all(np.diff(time) >= 0)
+    assert n == positions.shape[0] == time.shape[0]
+
+    diff_positions = np.diff(positions)
+    unwrapped_diffs = (diff_positions + 180) % 360 - 180
+    diff_cm = degrees_to_cm(unwrapped_diffs)
+    speed = diff_cm / np.diff(time)
+    speed[speed == np.inf] = 0
+    speed[np.isnan(speed)] = 0
+
+    # To make the vectors the same length
+    time_midpoints = (time[:-1] + time[1:]) / 2
+
+    assert time_midpoints.shape[0] == speed.shape[0]
+    return RotaryEncoder(time=time_midpoints, speed=speed)
+
+
 def get_region_channels(metadata_probe: pd.DataFrame) -> List[str]:
     probe_details_path = metadata_probe["Probe Details Path"].values[0]
     try:
@@ -96,13 +120,15 @@ def cache_ripple_result(session: str, recording_name: str, probe: str) -> None:
     metadata = gsheet2df("1HSERPbm-kDhe6X8bgflxvTuK24AfdrZJzbdBy11Hpcg", "Sheet1", 1)
     metadata_probe = metadata[
         (metadata["Session"] == session)
-        & (metadata["Recording Name"] == recording_name)
+        # & (metadata["Recording Name"] == recording_name)    ## PUT THIS BACK EVENTUALLY
         & (metadata["Probe"] == probe)
     ]
 
     region_channel = get_region_channels(metadata_probe)
     spike_session = load_spikes(metadata_probe)
     lfp = load_lfp(metadata_probe)
+
+    rotary_encoder = load_rotary_encoder(metadata_probe)
 
     CA1_channels = [
         idx
@@ -124,10 +150,20 @@ def cache_ripple_result(session: str, recording_name: str, probe: str) -> None:
     ripples = [event for events in ripples_channels for event in events]
     ripples = remove_duplicate_ripples(ripples, 0.3)
 
+    num_resting_and_running = len(ripples)
+    print(f"Number of ripples before running removal: {num_resting_and_running}")
+    threshold = 1  # Check if this is correct
+    ripples = get_resting_ripples(ripples, rotary_encoder, threshold)
+    num_resting = len(ripples)
+    print(f"Number of ripples after running removal: {num_resting}")
+
     padding = 2
     n_bins = 200
 
-    result = {}
+    result: Dict[str, Any] = {
+        "resting_percentage": num_resting / num_resting_and_running
+    }
+
     for area in ["retrosplenial", "dentate", "ca1"]:
 
         channels_keep = [
@@ -157,13 +193,24 @@ def cache_ripple_result(session: str, recording_name: str, probe: str) -> None:
     Result.model_validate(result)
 
     with open(
-        HERE.parent / "results" / f"{session}-{recording_name}-{probe}.json", "w"
+        HERE.parent / "results" / f"{session}-{recording_name}-Probe{probe}.json", "w"
     ) as f:
         json.dump(result, f)
 
 
-def main():
-    session = "WT_A_1397747_3M"
+def main() -> None:
+
+    sessions = [
+        # "NLGF_A_1393311_3M",
+        "WT_A_1397747_3M",
+        "WT_A_1423496_4M",
+        # "WT_A_1412719_6M",
+        # "WT_A_1397747_6M",
+        "NLGF_A_1393314_3M",
+        "NLGF_A_1393315_3M",
+        "NLGF_A_1393317_3M",
+    ]
     recording_name = "baseline1"
     probe = "1"
-    cache_ripple_result(session, recording_name, probe)
+    for session in sessions:
+        cache_ripple_result(session, recording_name, probe)
