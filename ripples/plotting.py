@@ -6,7 +6,7 @@ from matplotlib import cm
 from matplotlib import pyplot as plt
 
 
-from ripples.models import SpikesSession
+from ripples.models import RotaryEncoder, SpikesSession
 from ripples.utils import CandidateEvent
 
 
@@ -105,3 +105,11 @@ def plot_spikes_per_region(
         rotation=90,
     )
     # plt.tight_layout()
+
+
+def plot_ripples_against_position(
+    ripples: List[CandidateEvent], rotary_encoder: RotaryEncoder, sampling_rate_lfp: int
+) -> None:
+    plt.plot(rotary_encoder.time, rotary_encoder.position)
+    for ripple in ripples:
+        plt.axvline(ripple.onset / sampling_rate_lfp, color="red")

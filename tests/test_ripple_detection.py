@@ -28,7 +28,9 @@ def test_no_duplicates() -> None:
             onset=40, offset=50, peak_power=3.0, peak_idx=100 * SAMPLING_RATE_LFP
         ),
     ]
-    result = remove_duplicate_ripples(ripples, min_distance_seconds=MIN_DISTANCE)
+    result = remove_duplicate_ripples(
+        ripples, min_distance_seconds=MIN_DISTANCE, sampling_rate_lfp=SAMPLING_RATE_LFP
+    )
     assert len(result) == 3
 
 
@@ -47,7 +49,9 @@ def test_with_duplicates() -> None:
             onset=40, offset=50, peak_power=3.0, peak_idx=100 * SAMPLING_RATE_LFP
         ),
     ]
-    result = remove_duplicate_ripples(ripples, min_distance_seconds=MIN_DISTANCE)
+    result = remove_duplicate_ripples(
+        ripples, min_distance_seconds=MIN_DISTANCE, sampling_rate_lfp=SAMPLING_RATE_LFP
+    )
     assert len(result) == 2
     assert result[0].peak_power == 2.0
     assert result[1].peak_power == 3.0
@@ -59,7 +63,9 @@ def test_all_duplicates() -> None:
         CandidateEvent(onset=2, offset=12, peak_power=1.0, peak_idx=2),
         CandidateEvent(onset=4, offset=14, peak_power=0.8, peak_idx=3),
     ]
-    result = remove_duplicate_ripples(ripples, min_distance_seconds=MIN_DISTANCE)
+    result = remove_duplicate_ripples(
+        ripples, min_distance_seconds=MIN_DISTANCE, sampling_rate_lfp=SAMPLING_RATE_LFP
+    )
     assert len(result) == 1
     assert result[0].peak_power == 1.0
 
@@ -70,7 +76,9 @@ def test_all_duplicates_end_highest() -> None:
         CandidateEvent(onset=2, offset=12, peak_power=0, peak_idx=2),
         CandidateEvent(onset=4, offset=14, peak_power=8, peak_idx=3),
     ]
-    result = remove_duplicate_ripples(ripples, min_distance_seconds=MIN_DISTANCE)
+    result = remove_duplicate_ripples(
+        ripples, min_distance_seconds=MIN_DISTANCE, sampling_rate_lfp=SAMPLING_RATE_LFP
+    )
     assert len(result) == 1
     assert result[0].peak_power == 8
 
@@ -82,7 +90,7 @@ def test_all_duplicates_end_highest() -> None:
 #         CandidateEvent(onset=2, offset=12, peak_power=1.0, peak_idx=120),
 #         CandidateEvent(onset=4, offset=14, peak_power=1.0, peak_idx=140),
 #     ]
-#     result = remove_duplicate_ripples(ripples)
+#     result = remove_duplicate_ripples(ripples, sampling_rate_lfp=SAMPLING_RATE_LFP)
 #     assert len(result) == 1
 #     assert result[0].peak_power == 1.0
 #     assert result[0].peak_idx == 100
@@ -107,7 +115,9 @@ def test_multiple_duplicates() -> None:
         ),
     ]
 
-    result = remove_duplicate_ripples(ripples, min_distance_seconds=MIN_DISTANCE)
+    result = remove_duplicate_ripples(
+        ripples, min_distance_seconds=MIN_DISTANCE, sampling_rate_lfp=SAMPLING_RATE_LFP
+    )
 
     assert len(result) == 2
     assert result[0].peak_power == 10
@@ -224,66 +234,83 @@ def test_detect_ripple_events_starts_during_ripple() -> None:
 
 
 def test_no_ripples() -> None:
-    rotary_encoder = RotaryEncoder(time=np.array([]), speed=np.array([]))
-    assert get_resting_ripples([], rotary_encoder, 1) == []
+    rotary_encoder = RotaryEncoder(time=np.array([]), position=np.array([]))
+    assert (
+        get_resting_ripples([], rotary_encoder, 1, sampling_rate_lfp=SAMPLING_RATE_LFP)
+        == []
+    )
 
 
 def test_no_resting_ripples() -> None:
     ripples = [
-        CandidateEvent(onset=0, offset=10, peak_power=5.0, peak_idx=5),
-        CandidateEvent(onset=20, offset=30, peak_power=8.0, peak_idx=25),
+        CandidateEvent(
+            onset=0 * SAMPLING_RATE_LFP,
+            offset=1 * SAMPLING_RATE_LFP,
+            peak_power=5.0,
+            peak_idx=5,
+        ),
+        CandidateEvent(
+            onset=1 * SAMPLING_RATE_LFP,
+            offset=2 * SAMPLING_RATE_LFP,
+            peak_power=8.0,
+            peak_idx=25,
+        ),
     ]
-    rotary_encoder = RotaryEncoder(time=np.array([0, 1, 2]), speed=np.array([3, 4, 5]))
-    assert get_resting_ripples(ripples, rotary_encoder, 1) == []
+    rotary_encoder = RotaryEncoder(
+        time=np.array([0, 1, 2]), position=np.array([3, 4, 5])
+    )
+    result = get_resting_ripples(
+        ripples, rotary_encoder, 1, sampling_rate_lfp=SAMPLING_RATE_LFP
+    )
+    assert result == []
 
 
 def test_all_resting_ripples() -> None:
     ripples = [
-        CandidateEvent(onset=0, offset=10, peak_power=5.0, peak_idx=5),
-        CandidateEvent(onset=20, offset=30, peak_power=8.0, peak_idx=25),
+        CandidateEvent(
+            onset=0 * SAMPLING_RATE_LFP,
+            offset=1 * SAMPLING_RATE_LFP,
+            peak_power=5.0,
+            peak_idx=5,
+        ),
+        CandidateEvent(
+            onset=1 * SAMPLING_RATE_LFP,
+            offset=2 * SAMPLING_RATE_LFP,
+            peak_power=8.0,
+            peak_idx=25,
+        ),
     ]
+
     rotary_encoder = RotaryEncoder(
-        time=np.array([0, 1, 2]), speed=np.array([0.0, 0.01, 0.02])
+        time=np.array([0, 1, 2]), position=np.array([0.0, 0.01, 0.02])
     )
-    assert get_resting_ripples(ripples, rotary_encoder, 1) == ripples
+    assert get_resting_ripples(ripples, rotary_encoder, 1, SAMPLING_RATE_LFP) == ripples
 
 
 def test_some_resting_ripples() -> None:
     ripples = [
         CandidateEvent(
-            onset=0, offset=10, peak_power=5.0, peak_idx=1 * SAMPLING_RATE_LFP
+            onset=0 * SAMPLING_RATE_LFP,
+            offset=1.5 * SAMPLING_RATE_LFP,
+            peak_power=5.0,
+            peak_idx=1 * SAMPLING_RATE_LFP,
         ),
         CandidateEvent(
-            onset=20, offset=30, peak_power=8.0, peak_idx=2 * SAMPLING_RATE_LFP
+            onset=1.5 * SAMPLING_RATE_LFP,
+            offset=2.6 * SAMPLING_RATE_LFP,
+            peak_power=8.0,
+            peak_idx=2 * SAMPLING_RATE_LFP,
         ),
         CandidateEvent(
-            onset=40, offset=50, peak_power=2.0, peak_idx=3 * SAMPLING_RATE_LFP
+            onset=2.7 * SAMPLING_RATE_LFP,
+            offset=3.9 * SAMPLING_RATE_LFP,
+            peak_power=2.0,
+            peak_idx=3 * SAMPLING_RATE_LFP,
         ),
     ]
     rotary_encoder = RotaryEncoder(
-        time=np.array([0, 1.5, 2.5, 3.5]), speed=np.array([10, 0, 0, 2])
+        time=np.array([0, 1.5, 2.5, 3.5]), position=np.array([10, 0, 0, 2])
     )
     expected_resting_ripples = [ripples[1]]
-    result = get_resting_ripples(ripples, rotary_encoder, 1)
+    result = get_resting_ripples(ripples, rotary_encoder, 1, SAMPLING_RATE_LFP)
     assert result == expected_resting_ripples
-
-
-def test_interpolated_speed() -> None:
-    ripples = [
-        CandidateEvent(
-            onset=0, offset=10, peak_power=5.0, peak_idx=5 * SAMPLING_RATE_LFP
-        ),
-    ]
-    rotary_encoder = RotaryEncoder(
-        time=np.array([0, 10, 20]), speed=np.array([0.0, 0.02, 0.04])
-    )
-    assert get_resting_ripples(ripples, rotary_encoder, 1) == [ripples[0]]
-
-
-def test_edge_case_speed_threshold() -> None:
-    ripples = [
-        CandidateEvent(onset=0, offset=10, peak_power=5.0, peak_idx=5),
-        CandidateEvent(onset=20, offset=30, peak_power=8.0, peak_idx=25),
-    ]
-    rotary_encoder = RotaryEncoder(time=np.array([0, 1, 2]), speed=np.array([1, 1, 1]))
-    assert get_resting_ripples(ripples, rotary_encoder, 1) == []

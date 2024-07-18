@@ -22,7 +22,7 @@ from ripples.ripple_detection import (
     remove_duplicate_ripples,
 )
 
-from ripples.utils import degrees_to_cm
+from ripples.utils import degrees_to_cm, unwrap_angles
 from ripples.utils_npyx import load_lfp_npyx
 
 REFERENCE_CHANNEL = 191  # For the long linear, change depending on probe
@@ -73,24 +73,16 @@ def load_rotary_encoder(metadata_probe: pd.DataFrame) -> RotaryEncoder:
     rotary_encoder = io.loadmat(
         UMBRELLA / metadata_probe["Rotary encoder path"].values[0]
     )["data"][0][0]
-    n = rotary_encoder[0][0][0]
     positions = rotary_encoder[1][0]
+    position_cm = degrees_to_cm(unwrap_angles(positions))
+    assert (
+        np.max(np.abs(np.diff(position_cm))) < 1
+    ), "Something has probably gone wrong with the unwrapping"
+
     time = rotary_encoder[2][0]
     assert np.all(np.diff(time) >= 0)
-    assert n == positions.shape[0] == time.shape[0]
-
-    diff_positions = np.diff(positions)
-    unwrapped_diffs = (diff_positions + 180) % 360 - 180
-    diff_cm = degrees_to_cm(unwrapped_diffs)
-    speed = diff_cm / np.diff(time)
-    speed[speed == np.inf] = 0
-    speed[np.isnan(speed)] = 0
-
-    # To make the vectors the same length
-    time_midpoints = (time[:-1] + time[1:]) / 2
-
-    assert time_midpoints.shape[0] == speed.shape[0]
-    return RotaryEncoder(time=time_midpoints, speed=speed)
+    assert positions.shape[0] == time.shape[0]
+    return RotaryEncoder(time=time, position=position_cm)
 
 
 def get_region_channels(metadata_probe: pd.DataFrame) -> List[str]:
@@ -148,12 +140,12 @@ def cache_ripple_result(session: str, recording_name: str, probe: str) -> None:
 
     # Flattening makes further processing easier but loses the channel information
     ripples = [event for events in ripples_channels for event in events]
-    ripples = remove_duplicate_ripples(ripples, 0.3)
+    ripples = remove_duplicate_ripples(ripples, 0.3, SAMPLING_RATE_LFP)
 
     num_resting_and_running = len(ripples)
     print(f"Number of ripples before running removal: {num_resting_and_running}")
     threshold = 1  # Check if this is correct
-    ripples = get_resting_ripples(ripples, rotary_encoder, threshold)
+    ripples = get_resting_ripples(ripples, rotary_encoder, threshold, SAMPLING_RATE_LFP)
     num_resting = len(ripples)
     print(f"Number of ripples after running removal: {num_resting}")
 
@@ -182,6 +174,7 @@ def cache_ripple_result(session: str, recording_name: str, probe: str) -> None:
                 spike_times=spike_times,
                 padding=padding,
                 num_bins=n_bins,
+                sampling_rate_lfp=SAMPLING_RATE_LFP,
             )
             for ripple in ripples
         ]
@@ -202,12 +195,12 @@ def main() -> None:
 
     sessions = [
         # "NLGF_A_1393311_3M",
+        "NLGF_A_1393315_3M",
         "WT_A_1397747_3M",
         "WT_A_1423496_4M",
         # "WT_A_1412719_6M",
         # "WT_A_1397747_6M",
         "NLGF_A_1393314_3M",
-        "NLGF_A_1393315_3M",
         "NLGF_A_1393317_3M",
     ]
     recording_name = "baseline1"

@@ -18,11 +18,6 @@ class CandidateEvent(BaseModel):
     peak_power: int | float
     peak_idx: int
 
-    @computed_field
-    @property
-    def peak_time(self) -> float:
-        return self.peak_idx / SAMPLING_RATE_LFP
-
 
 class RipplesSummary(BaseModel):
     retrosplenial: List[List[int]]
@@ -35,4 +30,4 @@ class RipplesSummary(BaseModel):
 @dataclass
 class RotaryEncoder:
     time: np.ndarray
-    speed: np.ndarray
+    position: np.ndarray

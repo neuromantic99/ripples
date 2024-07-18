@@ -2,7 +2,7 @@ from typing import List
 import numpy as np
 
 from ripples.models import CandidateEvent, RotaryEncoder
-from ripples.utils import bandpass_filter, compute_envelope
+from ripples.utils import bandpass_filter, compute_envelope, smallest_positive_index
 
 
 def length_check(candidate_events: List[CandidateEvent]) -> List[CandidateEvent]:
@@ -53,13 +53,19 @@ def filter_candidate_ripples(
 
 
 def count_spikes_around_ripple(
-    ripple: CandidateEvent, spike_times: np.ndarray, padding: float, num_bins: int
+    ripple: CandidateEvent,
+    spike_times: np.ndarray,
+    padding: float,
+    num_bins: int,
+    sampling_rate_lfp: int,
 ) -> List[float]:
+
+    peak_time = ripple.peak_idx / sampling_rate_lfp
 
     spike_times = spike_times[
         np.logical_and(
-            spike_times > (ripple.peak_time - padding),
-            spike_times < (ripple.peak_time + padding),
+            spike_times > (peak_time - padding),
+            spike_times < (peak_time + padding),
         )
     ]
 
@@ -68,7 +74,7 @@ def count_spikes_around_ripple(
 
 
 def remove_duplicate_ripples(
-    ripples: List[CandidateEvent], min_distance_seconds: float
+    ripples: List[CandidateEvent], min_distance_seconds: float, sampling_rate_lfp: int
 ) -> List[CandidateEvent]:
     """TODO: This is very ineffecient and will break if peak power is exactly the same across two ripples"""
 
@@ -80,7 +86,11 @@ def remove_duplicate_ripples(
             if i == j:
                 continue
             if (
-                abs(ripples[i].peak_time - ripples[j].peak_time) < min_distance_seconds
+                abs(
+                    ripples[i].peak_idx / sampling_rate_lfp
+                    - ripples[j].peak_idx / sampling_rate_lfp
+                )
+                < min_distance_seconds
                 and ripples[i].peak_power < ripples[j].peak_power
             ):
                 keep = False
@@ -91,19 +101,34 @@ def remove_duplicate_ripples(
     return filtered_ripples
 
 
-def get_resting_ripples(
-    ripples: List[CandidateEvent], rotary_encoder: RotaryEncoder, threshold: float
-) -> List[CandidateEvent]:
-    """Double check this is 100% correct. I also don't love the interpolation when it only samples during actual movement"""
-    resting_ripples = []
-    for ripple in ripples:
-        ripple_speed = np.interp(
-            ripple.peak_time, rotary_encoder.time, rotary_encoder.speed
-        )
-        if abs(ripple_speed) < threshold:
-            resting_ripples.append(ripple)
+def average_ripple_speed(
+    ripple: CandidateEvent, rotary_encoder: RotaryEncoder, sampling_rate_lfp: int
+) -> float:
+    """This assumes the mouse is running in one direction only which is probably not correct"""
 
-    return resting_ripples
+    start_time = ripple.onset / sampling_rate_lfp
+    end_time = ripple.offset / sampling_rate_lfp
+    start_idx = smallest_positive_index(start_time - rotary_encoder.time)
+    end_idx = smallest_positive_index(end_time - rotary_encoder.time)
+    distance = rotary_encoder.position[end_idx] - rotary_encoder.position[start_idx]
+    return distance / (end_time - start_time)
+
+
+def get_resting_ripples(
+    ripples: List[CandidateEvent],
+    rotary_encoder: RotaryEncoder,
+    threshold: float,
+    sampling_rate_lfp: int,
+) -> List[CandidateEvent]:
+    """Assumes that the animal has not run forwards and backwards during the ripple"""
+    return [
+        ripple
+        for ripple in ripples
+        if (
+            abs(average_ripple_speed(ripple, rotary_encoder, sampling_rate_lfp))
+            < threshold
+        )
+    ]
 
 
 def detect_ripple_events(

@@ -34,3 +34,19 @@ T = TypeVar("T", float, np.ndarray)
 def degrees_to_cm(degrees: T) -> T:
     WHEEL_CIRUMFERENCE = 48  # Have not actually measured the ephys rig.
     return (degrees / 360) * WHEEL_CIRUMFERENCE
+
+
+def forward_fill(arr: np.ndarray) -> np.ndarray:
+    """numpy single dimension array equivalent of pandas ffill"""
+    mask = np.isnan(arr)
+    idx = np.where(~mask, np.arange(mask.size), 0)
+    np.maximum.accumulate(idx, out=idx)
+    return arr[idx]
+
+
+def smallest_positive_index(arr: np.ndarray) -> int:
+    return np.where(arr >= 0, arr, np.inf).argmin().astype(int)
+
+
+def unwrap_angles(angles: np.ndarray) -> np.ndarray:
+    return np.unwrap(np.deg2rad(angles), period=np.pi) * (180 / np.pi)
