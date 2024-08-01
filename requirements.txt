@@ -9,3 +9,5 @@ google-auth-oauthlib
 mypy
 pydantic
 seaborn
+matlabengine
+nptyping

@@ -6,6 +6,9 @@ from pathlib import Path
 from pathlib import Path
 import sys
 from typing import Any, Dict, List
+from scipy.ndimage import gaussian_filter1d
+from scipy.stats import zscore
+import matplotlib.pyplot as plt
 
 import mat73
 import numpy as np
@@ -13,7 +16,13 @@ import pandas as pd
 from scipy import io
 from ripples.consts import HERE, SAMPLING_RATE_LFP
 from ripples.gsheets_importer import gsheet2df
-from ripples.models import RipplesSummary, RotaryEncoder, SpikesSession
+from ripples.models import (
+    ClusterInfo,
+    ClusterType,
+    RipplesSummary,
+    RotaryEncoder,
+    Session,
+)
 from ripples.ripple_detection import (
     count_spikes_around_ripple,
     filter_candidate_ripples,
@@ -37,6 +46,31 @@ def preprocess(lfp: np.ndarray) -> np.ndarray:
     return lfp
 
 
+def map_channels_to_regions() -> List[str]:
+    """Returns a list of length n-microns with the area at each micron of the probe
+    (Work in progress)
+    """
+    import matlab.engine
+
+    eng = matlab.engine.start_matlab()
+    eng.cd(str(HERE / "matlab"), nargout=0)
+    AP = -1514.0
+    ML = 377.0
+    AZ = 146.0
+    elevation = 73.0
+    probeLength = 5800.0
+    x = 10 / 3
+    result = eng.ExtractAllenCCFTrajectory(
+        AP,
+        ML,
+        AZ,
+        elevation,
+        probeLength,
+        r"/Users/jamesrowland/Code/ripples/Allen CCF Mouse Atlas/AllenCCF_AtlasData.mat",
+    )
+    return result["area"]
+
+
 def load_lfp(metadata_probe: pd.DataFrame) -> np.ndarray:
 
     lfp_path = metadata_probe["LFP path"].values[0]
@@ -46,7 +80,9 @@ def load_lfp(metadata_probe: pd.DataFrame) -> np.ndarray:
     return np.concatenate((lfp[0::2, :], lfp[1::2, :]), axis=0)
 
 
-def load_spikes(metadata_probe: pd.DataFrame) -> SpikesSession:
+def load_spikes(
+    metadata_probe: pd.DataFrame, region_channel: List[str]
+) -> List[ClusterInfo]:
 
     kilsort_path = metadata_probe["Kilosort path"].values[0]
 
@@ -55,7 +91,7 @@ def load_spikes(metadata_probe: pd.DataFrame) -> SpikesSession:
 
     spike_times = np.load(UMBRELLA / kilsort_path / "spike_times.npy")
     spike_clusters = np.load(UMBRELLA / kilsort_path / "spike_clusters.npy")
-    cluster_info = pd.read_csv(UMBRELLA / kilsort_path / "cluster_info.tsv", sep="\t")
+    cluster_df = pd.read_csv(UMBRELLA / kilsort_path / "cluster_info.tsv", sep="\t")
 
     sys.path.append(str(UMBRELLA / kilsort_path))
     params = importlib.import_module("params")
@@ -63,9 +99,64 @@ def load_spikes(metadata_probe: pd.DataFrame) -> SpikesSession:
 
     spike_times = spike_times / params.sample_rate
 
-    channel_lookup = dict(zip(cluster_info["cluster_id"], cluster_info["ch"]))
-    spike_channels = np.array([channel_lookup[cluster] for cluster in spike_clusters])
-    return SpikesSession(spike_times=spike_times, spike_channels=spike_channels)
+    return [
+        ClusterInfo(
+            spike_times=(spike_times[spike_clusters == row["cluster_id"]])
+            .squeeze()
+            .tolist(),
+            region=region_channel[row["ch"]],
+            info=ClusterType(row["KSLabel"]),
+            channel=row["ch"],
+        )
+        for _, row in cluster_df.iterrows()
+    ]
+
+
+def get_smoothed_activity_matrix(
+    clusters_info: List[ClusterInfo], sigma: float, region: str | None
+) -> np.ndarray:
+    """Sigma = gaussian smoothing kernal (seconds)"""
+
+    bin_size = 1 / 1000  # Review this
+    sigma_bins = int(sigma / bin_size)
+
+    # TODO: probably have this as argument rather than computing it
+    duration = np.max(np.hstack([cluster.spike_times for cluster in clusters_info]))
+
+    time_axis = np.arange(0, duration, bin_size)
+    smoothed_activity_matrix = []
+
+    for cluster in clusters_info:
+
+        if cluster.info != ClusterType.GOOD:
+            continue
+
+        if region is not None and region not in cluster.region:
+            continue
+
+        spike_counts, _ = np.histogram(cluster.spike_times, bins=time_axis)
+
+        spike_counts = spike_counts.astype(
+            "float64"
+        )  # Otherwise the smoothed result is an integer of all zeros
+
+        smoothed = gaussian_filter1d(spike_counts, sigma=sigma_bins)
+        smoothed_activity_matrix.append(smoothed)
+
+    return np.array(smoothed_activity_matrix)
+
+
+def get_distance_matrix(
+    clusters_info: List[ClusterInfo], region: str | None
+) -> np.ndarray:
+    activity_matrix = get_smoothed_activity_matrix(
+        clusters_info,
+        sigma=1,
+        region=region,
+    )
+    zscored = zscore(activity_matrix, axis=1)
+    crosscorr = np.corrcoef(zscored)
+    return 1 - crosscorr
 
 
 def load_rotary_encoder(metadata_probe: pd.DataFrame) -> RotaryEncoder:
@@ -107,17 +198,17 @@ def get_region_channels(metadata_probe: pd.DataFrame) -> List[str]:
     return list(reversed(region_channel))
 
 
-def cache_ripple_result(session: str, recording_name: str, probe: str) -> None:
+def cache_session(session_name: str, recording_name: str, probe: str) -> None:
 
-    metadata = gsheet2df("1HSERPbm-kDhe6X8bgflxvTuK24AfdrZJzbdBy11Hpcg", "Sheet1", 1)
+    metadata = gsheet2df("1HSERPbm-kDhe6X8bgflxvTuK24AfdrZJzbdBy11Hpcg", "sessions", 1)
     metadata_probe = metadata[
-        (metadata["Session"] == session)
+        (metadata["Session"] == session_name)
         # & (metadata["Recording Name"] == recording_name)    ## PUT THIS BACK EVENTUALLY
         & (metadata["Probe"] == probe)
     ]
 
     region_channel = get_region_channels(metadata_probe)
-    spike_session = load_spikes(metadata_probe)
+    clusters_info = load_spikes(metadata_probe, region_channel)
     lfp = load_lfp(metadata_probe)
 
     rotary_encoder = load_rotary_encoder(metadata_probe)
@@ -152,8 +243,8 @@ def cache_ripple_result(session: str, recording_name: str, probe: str) -> None:
     padding = 2
     n_bins = 200
 
-    result: Dict[str, Any] = {
-        "resting_percentage": num_resting / num_resting_and_running
+    ripples_summary: Dict[str, Any] = {
+        "resting_percentage": num_resting / num_resting_and_running,
     }
 
     for area in ["retrosplenial", "dentate", "ca1"]:
@@ -164,9 +255,13 @@ def cache_ripple_result(session: str, recording_name: str, probe: str) -> None:
             if region is not None and area in region.lower()
         ]
 
-        spike_times = spike_session.spike_times[
-            np.isin(spike_session.spike_channels, channels_keep)
-        ]
+        spike_times = np.hstack(
+            [
+                cluster.spike_times
+                for cluster in clusters_info
+                if cluster.channel in channels_keep
+            ]
+        )
 
         spike_count = [
             count_spikes_around_ripple(
@@ -179,19 +274,24 @@ def cache_ripple_result(session: str, recording_name: str, probe: str) -> None:
             for ripple in ripples
         ]
 
-        result[area] = spike_count
+        ripples_summary[area] = spike_count
 
-    result["ripple_power"] = [ripple.peak_power for ripple in ripples]
+    ripples_summary["ripple_power"] = [ripple.peak_power for ripple in ripples]
 
-    RipplesSummary.model_validate(result)
+    session: Session = Session(
+        ripples_summary=RipplesSummary(**ripples_summary),
+        clusters_info=clusters_info,
+    )
 
     with open(
-        HERE.parent / "results" / f"{session}-{recording_name}-Probe{probe}.json", "w"
+        HERE.parent / "results" / f"{session_name}-{recording_name}-Probe{probe}.json",
+        "w",
     ) as f:
-        json.dump(result, f)
+        json.dump(session.model_dump(), f)
 
 
 def main() -> None:
+    # map_channels_to_regions()
 
     sessions = [
         # "NLGF_A_1393311_3M",
@@ -206,4 +306,4 @@ def main() -> None:
     recording_name = "baseline1"
     probe = "1"
     for session in sessions:
-        cache_ripple_result(session, recording_name, probe)
+        cache_session(session, recording_name, probe)

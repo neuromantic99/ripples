@@ -1,5 +1,6 @@
 results/
 figures/
+Allen CCF Mouse Atlas/
 
 credentials.json
 token.pickle

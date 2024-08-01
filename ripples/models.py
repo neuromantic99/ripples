@@ -1,15 +1,23 @@
 from dataclasses import dataclass
+from enum import Enum
 from typing import List
 
 import numpy as np
-from pydantic import BaseModel, computed_field
-from ripples.consts import SAMPLING_RATE_LFP
+from pydantic import BaseModel
+
+
+class ClusterType(str, Enum):
+    MUA = "mua"
+    GOOD = "good"
+    NOISE = "noise"
 
 
 @dataclass
-class SpikesSession:
-    spike_channels: np.ndarray
-    spike_times: np.ndarray
+class ClusterInfo:
+    spike_times: List[float]
+    region: str
+    info: ClusterType
+    channel: int
 
 
 class CandidateEvent(BaseModel):
@@ -31,3 +39,8 @@ class RipplesSummary(BaseModel):
 class RotaryEncoder:
     time: np.ndarray
     position: np.ndarray
+
+
+class Session(BaseModel):
+    ripples_summary: RipplesSummary
+    clusters_info: List[ClusterInfo]
