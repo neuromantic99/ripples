@@ -18,6 +18,7 @@ class ClusterInfo:
     region: str
     info: ClusterType
     channel: int
+    depth: float
 
 
 class CandidateEvent(BaseModel):
@@ -44,3 +45,11 @@ class RotaryEncoder:
 class Session(BaseModel):
     ripples_summary: RipplesSummary
     clusters_info: List[ClusterInfo]
+
+
+class ProbeCoordinate(BaseModel):
+    AP: float
+    ML: float
+    AZ: float
+    elevation: float
+    depth: float

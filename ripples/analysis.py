@@ -1,9 +1,6 @@
 import importlib
 import json
 from pathlib import Path
-
-
-from pathlib import Path
 import sys
 from typing import Any, Dict, List
 from scipy.ndimage import gaussian_filter1d
@@ -19,10 +16,12 @@ from ripples.gsheets_importer import gsheet2df
 from ripples.models import (
     ClusterInfo,
     ClusterType,
+    ProbeCoordinate,
     RipplesSummary,
     RotaryEncoder,
     Session,
 )
+from ripples.plotting import plot_channel_depth_profile
 from ripples.ripple_detection import (
     count_spikes_around_ripple,
     filter_candidate_ripples,
@@ -31,7 +30,12 @@ from ripples.ripple_detection import (
     remove_duplicate_ripples,
 )
 
-from ripples.utils import degrees_to_cm, unwrap_angles
+from ripples.utils import (
+    degrees_to_cm,
+    interleave_arrays,
+    smallest_positive_index,
+    unwrap_angles,
+)
 from ripples.utils_npyx import load_lfp_npyx
 
 REFERENCE_CHANNEL = 191  # For the long linear, change depending on probe
@@ -46,29 +50,66 @@ def preprocess(lfp: np.ndarray) -> np.ndarray:
     return lfp
 
 
-def map_channels_to_regions() -> List[str]:
+def map_channels_to_regions(coordinates: ProbeCoordinate, n_channels: int) -> List[str]:
     """Returns a list of length n-microns with the area at each micron of the probe
     (Work in progress)
     """
     import matlab.engine
 
+    # Clone this: github.com/neuromantic99/neuropixels_trajectory_explorer
+    # Add npy matlab to the same folder (github.com/kwikteam/npy-matlab)
+    # Set the local path to the repo here:
+    path_to_npte = Path("/Users/jamesrowland/Code/neuropixels_trajectory_explorer/")
+
     eng = matlab.engine.start_matlab()
-    eng.cd(str(HERE / "matlab"), nargout=0)
-    AP = -1514.0
-    ML = 377.0
-    AZ = 146.0
-    elevation = 73.0
-    probeLength = 5800.0
-    x = 10 / 3
-    result = eng.ExtractAllenCCFTrajectory(
-        AP,
-        ML,
-        AZ,
-        elevation,
-        probeLength,
-        r"/Users/jamesrowland/Code/ripples/Allen CCF Mouse Atlas/AllenCCF_AtlasData.mat",
+    eng.cd(str(path_to_npte), nargout=0)
+    probe_area_labels, probe_area_boundaries = (
+        eng.neuropixels_trajectory_explorer_nogui(
+            float(coordinates.AP) / 1000,
+            float(coordinates.ML) / 1000,
+            float(coordinates.AZ),
+            float(coordinates.elevation),
+            str(path_to_npte / "npy-matlab"),
+            str(HERE.parent / r"Allen CCF Mouse Atlas"),
+            nargout=2,
+        )
     )
-    return result["area"]
+
+    probe_area_labels = probe_area_labels[0]
+    probe_area_boundaries = np.array(probe_area_boundaries).squeeze()
+
+    # Channels with depth 0 are the ones nearest the tip.
+    # Channel 0 has depth 0 so start at the tip of the probe
+    # (github.com/cortex-lab/neuropixels/issues/16#issuecomment-659604278)
+
+    # from www.nature.com/articles/s41598-021-81127-5/figures/1
+    # tip_length = 195
+    # Not true but adds simplicity when manually aligning to SW
+    tip_length = 0
+    distance_from_tip = tip_length
+
+    area_channel: List[str] = []
+    for _ in range(n_channels):
+
+        channel_position = int(coordinates.depth - distance_from_tip)
+        distance_from_tip += 20
+
+        if channel_position < 0:
+            area_channel.append("Outside brain")
+            continue
+
+        area_idx = smallest_positive_index(
+            channel_position / 1000 - probe_area_boundaries
+        )
+        # probe_area_labels is 1 shorter than probe_area_boundaries as it
+        # marks the start and end of each region. Need to subtract 1 if it's in the
+        # final region
+        if area_idx == len(probe_area_labels):
+            area_idx -= 1
+
+        area_channel.append(probe_area_labels[area_idx])
+
+    return area_channel
 
 
 def load_lfp(metadata_probe: pd.DataFrame) -> np.ndarray:
@@ -77,7 +118,23 @@ def load_lfp(metadata_probe: pd.DataFrame) -> np.ndarray:
     lfp = load_lfp_npyx(UMBRELLA / lfp_path)
 
     # The long linear channels are interleaved (confirmed by plotting)
-    return np.concatenate((lfp[0::2, :], lfp[1::2, :]), axis=0)
+    # TODO: SHOULD THIS FLIP BE HERE AHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH
+    return np.flip(np.concatenate((lfp[0::2, :], lfp[1::2, :]), axis=0), axis=0)
+
+
+def check_channel_order(clusters_info: List[ClusterInfo]) -> None:
+    """Makes sure the deinterleaving is required and has worked"""
+    prev = None
+    for idx in range(384):
+        if c := [cluster for cluster in clusters_info if cluster.channel == idx]:
+            if prev is not None:
+                assert (
+                    c[0].depth == prev + 20
+                ), "Channels have been deinterleaved incorrectly. Look at load_spikes"
+
+            prev = c[0].depth
+        else:
+            prev = None
 
 
 def load_spikes(
@@ -99,6 +156,12 @@ def load_spikes(
 
     spike_times = spike_times / params.sample_rate
 
+    n_channels = len(region_channel)
+    channel_map = np.arange(n_channels)
+    channel_map = interleave_arrays(
+        channel_map[: n_channels // 2], channel_map[n_channels // 2 :]
+    )
+
     return [
         ClusterInfo(
             spike_times=(spike_times[spike_clusters == row["cluster_id"]])
@@ -106,7 +169,8 @@ def load_spikes(
             .tolist(),
             region=region_channel[row["ch"]],
             info=ClusterType(row["KSLabel"]),
-            channel=row["ch"],
+            channel=channel_map[row["ch"]],
+            depth=row["depth"],
         )
         for _, row in cluster_df.iterrows()
     ]
@@ -176,7 +240,9 @@ def load_rotary_encoder(metadata_probe: pd.DataFrame) -> RotaryEncoder:
     return RotaryEncoder(time=time, position=position_cm)
 
 
-def get_region_channels(metadata_probe: pd.DataFrame) -> List[str]:
+def map_channels_to_regions_existing_mat_file(
+    metadata_probe: pd.DataFrame,
+) -> List[str]:
     probe_details_path = metadata_probe["Probe Details Path"].values[0]
     try:
         mat_file = mat73.loadmat(UMBRELLA / probe_details_path)
@@ -203,15 +269,27 @@ def cache_session(session_name: str, recording_name: str, probe: str) -> None:
     metadata = gsheet2df("1HSERPbm-kDhe6X8bgflxvTuK24AfdrZJzbdBy11Hpcg", "sessions", 1)
     metadata_probe = metadata[
         (metadata["Session"] == session_name)
-        # & (metadata["Recording Name"] == recording_name)    ## PUT THIS BACK EVENTUALLY
+        & (metadata["Recording Name"] == recording_name)
         & (metadata["Probe"] == probe)
     ]
+    coordinates = ProbeCoordinate(
+        AP=metadata_probe["AP"],
+        ML=metadata_probe["ML"],
+        AZ=metadata_probe["AZ"],
+        elevation=metadata_probe["Elevation"],
+        # depth=metadata_probe["Depth"],
+        # TODO: Add a check if this exists
+        depth=metadata_probe["Actual depth"],
+    )
 
-    region_channel = get_region_channels(metadata_probe)
-    clusters_info = load_spikes(metadata_probe, region_channel)
     lfp = load_lfp(metadata_probe)
-
+    n_channels = lfp.shape[0]
+    region_channel = map_channels_to_regions(coordinates, n_channels)
+    clusters_info = load_spikes(metadata_probe, region_channel)
+    check_channel_order(clusters_info)
     rotary_encoder = load_rotary_encoder(metadata_probe)
+
+    plot_channel_depth_profile(lfp, region_channel, clusters_info)
 
     CA1_channels = [
         idx
@@ -291,19 +369,17 @@ def cache_session(session_name: str, recording_name: str, probe: str) -> None:
 
 
 def main() -> None:
-    # map_channels_to_regions()
 
-    sessions = [
-        # "NLGF_A_1393311_3M",
-        "NLGF_A_1393315_3M",
-        "WT_A_1397747_3M",
-        "WT_A_1423496_4M",
-        # "WT_A_1412719_6M",
-        # "WT_A_1397747_6M",
-        "NLGF_A_1393314_3M",
-        "NLGF_A_1393317_3M",
+    recordings = [
+        ("NLGF_A_1393311_3M", "baseline4"),
+        ("NLGF_A_1393315_3M", "baseline1"),
+        ("WT_A_1397747_3M", "baseline1"),
+        ("WT_A_1423496_4M", "baseline1"),
+        # (# "WT_A_1412719_6M", "baseline1"),
+        # (# "WT_A_1397747_6M", "baseline1"),
+        ("NLGF_A_1393314_3M", "baseline1"),
+        ("NLGF_A_1393317_3M", "baseline1"),
     ]
-    recording_name = "baseline1"
     probe = "1"
-    for session in sessions:
+    for session, recording_name in recordings:
         cache_session(session, recording_name, probe)

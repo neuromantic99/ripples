@@ -11,3 +11,5 @@ pydantic
 seaborn
 matlabengine
 nptyping
+imageio
+napari[all]

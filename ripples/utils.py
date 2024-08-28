@@ -5,9 +5,9 @@ from scipy import signal
 
 
 def bandpass_filter(
-    lfp: np.ndarray, low: int, high: int, sampling_rate: int
+    lfp: np.ndarray, low: float, high: float, sampling_rate: int, order: int = 4
 ) -> np.ndarray:
-    b, a = signal.butter(4, Wn=[low, high], fs=sampling_rate, btype="bandpass")
+    b, a = signal.butter(order, Wn=[low, high], fs=sampling_rate, btype="bandpass")
     return signal.filtfilt(b, a, lfp, axis=1)
 
 
@@ -50,3 +50,39 @@ def smallest_positive_index(arr: np.ndarray) -> int:
 
 def unwrap_angles(angles: np.ndarray) -> np.ndarray:
     return np.unwrap(np.deg2rad(angles), period=np.pi) * (180 / np.pi)
+
+
+def compute_power(filtered_data: np.ndarray) -> np.ndarray:
+    """
+    Compute the average power of the filtered data over each window.
+
+    Parameters:
+    - filtered_data: ndarray (n_channels, window_size_samples), filtered signal
+
+    Returns:
+    - power: ndarray (n_channels,), average power in each channel
+    """
+    return np.mean(filtered_data**2, axis=1)
+
+
+def moving_average(arr: np.ndarray, window: int) -> np.ndarray:
+    return np.convolve(arr, np.ones(window), "valid") / window
+
+
+def norm(x: np.ndarray) -> np.ndarray:
+    return (x - min(x)) / (max(x) - min(x))
+
+
+def threshold_detect(signal: np.ndarray, threshold: float) -> np.ndarray:
+    """Returns the indices where signal crosses the threshold"""
+    thresh_signal = signal > threshold
+    thresh_signal[1:][thresh_signal[:-1] & thresh_signal[1:]] = False
+    times = np.where(thresh_signal)
+    return times[0]
+
+
+def interleave_arrays(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+    c = np.empty((a.size + b.size,), dtype=a.dtype)
+    c[::2] = a
+    c[1::2] = b
+    return c
