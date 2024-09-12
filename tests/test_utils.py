@@ -1,6 +1,6 @@
 import numpy as np
 
-from ripples.utils import bandpass_filter, forward_fill
+from ripples.utils import bandpass_filter, forward_fill, mean_across_same_session
 
 
 def test_butterworth() -> None:
@@ -18,3 +18,41 @@ def test_forward_fill() -> None:
     result = forward_fill(arr)
 
     assert np.array_equal(result, np.array([1, 1, 1, 4, 4, 6, 6, 6, 9]))
+
+
+def test_mean_across_same_session_no_nesting() -> None:
+    class Session:
+        def __init__(self, session_id: str, data: float):
+            self.id = session_id
+            self.data = data
+
+    sessions = [Session("1", 10), Session("1", 20), Session("2", 30), Session("2", 40)]
+
+    result = mean_across_same_session(sessions)  # type: ignore
+    expected = [
+        15.0,
+        35.0,
+    ]
+
+    assert result == expected, f"Expected {expected} but got {result}"
+
+
+def test_mean_across_same_session_another_one() -> None:
+
+    class Session:
+        def __init__(self, session_id: str, data: float):
+            self.id = session_id
+            self.data = data
+
+    sessions = [
+        Session("1", 10),
+        Session("1", 20),
+        Session("2", 30),
+        Session("2", 40),
+        Session("3", 1000),
+    ]
+
+    result = mean_across_same_session(sessions)  # type: ignore
+    expected = [15.0, 35.0, 1000]
+
+    assert result == expected, f"Expected {expected} but got {result}"

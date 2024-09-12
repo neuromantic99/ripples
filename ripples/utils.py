@@ -1,7 +1,10 @@
+from collections import defaultdict
 from typing import List, TypeVar
 
 import numpy as np
 from scipy import signal
+
+from ripples.models import SessionToAverage
 
 
 def bandpass_filter(
@@ -61,6 +64,8 @@ def compute_power(filtered_data: np.ndarray) -> np.ndarray:
 
     Returns:
     - power: ndarray (n_channels,), average power in each channel
+
+    TODO: IS THIS CORRECT?
     """
     return np.mean(filtered_data**2, axis=1)
 
@@ -86,3 +91,14 @@ def interleave_arrays(a: np.ndarray, b: np.ndarray) -> np.ndarray:
     c[::2] = a
     c[1::2] = b
     return c
+
+
+def mean_across_same_session(sessions: List[SessionToAverage]) -> List[float]:
+
+    data_dict: defaultdict[str, dict] = defaultdict(lambda: {"sum": 0, "count": 0})
+    # Populate the dictionary with sums and counts
+    for session in sessions:
+        data_dict[session.id]["sum"] += session.data
+        data_dict[session.id]["count"] += 1
+
+    return [value["sum"] / value["count"] for value in data_dict.values()]
