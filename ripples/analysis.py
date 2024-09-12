@@ -21,13 +21,14 @@ from ripples.models import (
     RotaryEncoder,
     Session,
 )
-from ripples.plotting import plot_channel_depth_profile
+from ripples.plotting import plot_channel_depth_profile, plot_lfp_spectrogram
 from ripples.ripple_detection import (
     count_spikes_around_ripple,
     filter_candidate_ripples,
     get_candidate_ripples,
     get_resting_ripples,
     remove_duplicate_ripples,
+    rotary_encoder_percentage_resting,
 )
 
 from ripples.utils import (
@@ -112,14 +113,16 @@ def map_channels_to_regions(coordinates: ProbeCoordinate, n_channels: int) -> Li
     return area_channel
 
 
-def load_lfp(metadata_probe: pd.DataFrame) -> np.ndarray:
+def load_lfp(lfp_path: Path) -> np.ndarray:
 
-    lfp_path = metadata_probe["LFP path"].values[0]
-    lfp = load_lfp_npyx(UMBRELLA / lfp_path)
+    lfp = load_lfp_npyx(str(UMBRELLA / lfp_path))
 
     # The long linear channels are interleaved (confirmed by plotting)
-    # TODO: SHOULD THIS FLIP BE HERE AHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHHH
-    return np.flip(np.concatenate((lfp[0::2, :], lfp[1::2, :]), axis=0), axis=0)
+    lfp = np.concatenate((lfp[0::2, :], lfp[1::2, :]), axis=0)
+    lfp[191, :] = 0
+    # TODO: PRETTY SURE THIS FLIP SHOULD NOT BE HERE BUT AHHHHHHHHHHHHH
+    # return np.flip(lfp, axis=0)
+    return lfp
 
 
 def check_channel_order(clusters_info: List[ClusterInfo]) -> None:
@@ -137,22 +140,18 @@ def check_channel_order(clusters_info: List[ClusterInfo]) -> None:
             prev = None
 
 
-def load_spikes(
-    metadata_probe: pd.DataFrame, region_channel: List[str]
-) -> List[ClusterInfo]:
-
-    kilsort_path = metadata_probe["Kilosort path"].values[0]
+def load_spikes(kilosort_path: Path, region_channel: List[str]) -> List[ClusterInfo]:
 
     # TODO: filter noise clusters, not sure if Jana has vetted these
     # keep_idx = cluster_info[cluster_info["KSLabel"].isin(["good", "mua"])].index
 
-    spike_times = np.load(UMBRELLA / kilsort_path / "spike_times.npy")
-    spike_clusters = np.load(UMBRELLA / kilsort_path / "spike_clusters.npy")
-    cluster_df = pd.read_csv(UMBRELLA / kilsort_path / "cluster_info.tsv", sep="\t")
+    spike_times = np.load(UMBRELLA / kilosort_path / "spike_times.npy")
+    spike_clusters = np.load(UMBRELLA / kilosort_path / "spike_clusters.npy")
+    cluster_df = pd.read_csv(UMBRELLA / kilosort_path / "cluster_info.tsv", sep="\t")
 
-    sys.path.append(str(UMBRELLA / kilsort_path))
+    sys.path.append(str(UMBRELLA / kilosort_path))
     params = importlib.import_module("params")
-    sys.path.remove(str(UMBRELLA / kilsort_path))
+    sys.path.remove(str(UMBRELLA / kilosort_path))
 
     spike_times = spike_times / params.sample_rate
 
@@ -169,10 +168,14 @@ def load_spikes(
             .tolist(),
             region=region_channel[row["ch"]],
             info=ClusterType(row["KSLabel"]),
-            channel=channel_map[row["ch"]],
+            channel=int(
+                channel_map[row["ch"]]
+            ),  # Int cast as np.in64 is not json serializable
             depth=row["depth"],
         )
         for _, row in cluster_df.iterrows()
+        # A single spike doesn't make sense and it ruins the type of the class
+        if len(spike_times[spike_clusters == row["cluster_id"]]) > 1
     ]
 
 
@@ -223,11 +226,9 @@ def get_distance_matrix(
     return 1 - crosscorr
 
 
-def load_rotary_encoder(metadata_probe: pd.DataFrame) -> RotaryEncoder:
+def load_rotary_encoder(rotary_encoder_path: Path) -> RotaryEncoder:
     """scipy io loads this in an insane way"""
-    rotary_encoder = io.loadmat(
-        UMBRELLA / metadata_probe["Rotary encoder path"].values[0]
-    )["data"][0][0]
+    rotary_encoder = io.loadmat(UMBRELLA / rotary_encoder_path)["data"][0][0]
     positions = rotary_encoder[1][0]
     position_cm = degrees_to_cm(unwrap_angles(positions))
     assert (
@@ -264,32 +265,34 @@ def map_channels_to_regions_existing_mat_file(
     return list(reversed(region_channel))
 
 
-def cache_session(session_name: str, recording_name: str, probe: str) -> None:
+def cache_session(metadata_probe: pd.Series) -> None:
 
-    metadata = gsheet2df("1HSERPbm-kDhe6X8bgflxvTuK24AfdrZJzbdBy11Hpcg", "sessions", 1)
-    metadata_probe = metadata[
-        (metadata["Session"] == session_name)
-        & (metadata["Recording Name"] == recording_name)
-        & (metadata["Probe"] == probe)
-    ]
+    recording_id = f"{metadata_probe['Session']}-{metadata_probe['Recording Name']}-Probe{metadata_probe['Probe']}"
+
+    depth = (
+        metadata_probe["Actual depth"]
+        if len(metadata_probe["Actual depth"]) > 0
+        else metadata_probe["Depth"]
+    )
+    print(f"DEPTH: {depth}")
+
     coordinates = ProbeCoordinate(
         AP=metadata_probe["AP"],
         ML=metadata_probe["ML"],
         AZ=metadata_probe["AZ"],
         elevation=metadata_probe["Elevation"],
-        # depth=metadata_probe["Depth"],
-        # TODO: Add a check if this exists
-        depth=metadata_probe["Actual depth"],
+        depth=depth,
     )
 
-    lfp = load_lfp(metadata_probe)
+    lfp = load_lfp(Path(metadata_probe["LFP path"]))
     n_channels = lfp.shape[0]
     region_channel = map_channels_to_regions(coordinates, n_channels)
-    clusters_info = load_spikes(metadata_probe, region_channel)
+    clusters_info = load_spikes(Path(metadata_probe["Kilosort path"]), region_channel)
     check_channel_order(clusters_info)
-    rotary_encoder = load_rotary_encoder(metadata_probe)
+    rotary_encoder = load_rotary_encoder(Path(metadata_probe["Rotary encoder path"]))
 
-    plot_channel_depth_profile(lfp, region_channel, clusters_info)
+    plot_lfp_spectrogram(lfp, recording_id)
+    plot_channel_depth_profile(lfp, region_channel, clusters_info, recording_id)
 
     CA1_channels = [
         idx
@@ -322,16 +325,24 @@ def cache_session(session_name: str, recording_name: str, probe: str) -> None:
     n_bins = 200
 
     ripples_summary: Dict[str, Any] = {
-        "resting_percentage": num_resting / num_resting_and_running,
+        "resting_percentage": rotary_encoder_percentage_resting(
+            rotary_encoder, threshold, lfp.shape[1] / SAMPLING_RATE_LFP
+        ),
+        "events": ripples,
     }
 
-    for area in ["retrosplenial", "dentate", "ca1"]:
+    area_map = {"dg-": "dentate", "ca1": "ca1", "rsp": "retrosplenial"}
+
+    # TODO: Probably this is the wrong place to compute this
+    for area in area_map:
 
         channels_keep = [
             idx
             for idx, region in enumerate(region_channel)
             if region is not None and area in region.lower()
         ]
+
+        print(f"Number of channels in {area_map[area]}: {len(channels_keep)}")
 
         spike_times = np.hstack(
             [
@@ -352,17 +363,19 @@ def cache_session(session_name: str, recording_name: str, probe: str) -> None:
             for ripple in ripples
         ]
 
-        ripples_summary[area] = spike_count
+        ripples_summary[area_map[area]] = spike_count
 
     ripples_summary["ripple_power"] = [ripple.peak_power for ripple in ripples]
 
     session: Session = Session(
         ripples_summary=RipplesSummary(**ripples_summary),
         clusters_info=clusters_info,
+        id=metadata_probe["Session"],
+        length_seconds=lfp.shape[1] / SAMPLING_RATE_LFP,
     )
 
     with open(
-        HERE.parent / "results" / f"{session_name}-{recording_name}-Probe{probe}.json",
+        HERE.parent / "results" / f"{recording_id}.json",
         "w",
     ) as f:
         json.dump(session.model_dump(), f)
@@ -370,16 +383,27 @@ def cache_session(session_name: str, recording_name: str, probe: str) -> None:
 
 def main() -> None:
 
-    recordings = [
-        ("NLGF_A_1393311_3M", "baseline4"),
-        ("NLGF_A_1393315_3M", "baseline1"),
-        ("WT_A_1397747_3M", "baseline1"),
-        ("WT_A_1423496_4M", "baseline1"),
-        # (# "WT_A_1412719_6M", "baseline1"),
-        # (# "WT_A_1397747_6M", "baseline1"),
-        ("NLGF_A_1393314_3M", "baseline1"),
-        ("NLGF_A_1393317_3M", "baseline1"),
-    ]
-    probe = "1"
-    for session, recording_name in recordings:
-        cache_session(session, recording_name, probe)
+    reprocess = True
+    metadata = gsheet2df("1HSERPbm-kDhe6X8bgflxvTuK24AfdrZJzbdBy11Hpcg", "sessions", 1)
+    metadata = metadata[metadata["CA1 detected"] == "TRUE"]
+    metadata = metadata[metadata["Ignore"] == "FALSE"]
+
+    sessions_keep = []
+    for session in metadata["Session"].to_list():
+        if session[-2:] in ["3M", "4M"]:
+            animal_name = "_".join(session.split("_")[:3])
+            assert animal_name.startswith("WT") or animal_name.startswith("NLGF")
+            sessions_keep.append(session)
+
+    for _, row in metadata.iterrows():
+        json_path = (
+            HERE.parent
+            / "results"
+            / f"{row['Session']}-{row['Recording Name']}-Probe{row['Probe']}.json"
+        )
+
+        if json_path.exists() and not reprocess:
+            print(f"Skipping {json_path}")
+            continue
+        print(f"Processing {json_path}")
+        cache_session(row)
