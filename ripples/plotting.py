@@ -5,10 +5,11 @@ import numpy as np
 from matplotlib import cm
 from matplotlib import pyplot as plt
 from scipy.stats import zscore
+import seaborn as sns
 
 
-from ripples.consts import SAMPLING_RATE_LFP
-from ripples.models import ClusterInfo, RotaryEncoder, CandidateEvent
+from ripples.consts import SAMPLING_RATE_LFP, HERE
+from ripples.models import ClusterInfo, ClusterType, RotaryEncoder, CandidateEvent
 from ripples.utils import bandpass_filter, compute_power
 
 
@@ -96,17 +97,11 @@ def plot_frequency_depth(lfp: np.ndarray, ax: Any | None = None) -> None:
 
 
 def plot_channel_depth_profile(
-    lfp: np.ndarray, region_channel: List[str], clusters_info: List[ClusterInfo]
+    lfp: np.ndarray,
+    region_channel: List[str],
+    clusters_info: List[ClusterInfo],
+    recording_id: str,
 ) -> None:
-
-    # depth_map: Dict[float, float] = {}
-
-    # for cluster in clusters_info:
-    #     if cluster.depth not in depth_map:
-    #         depth_map[cluster.depth] = 0
-    #     depth_map[cluster.depth] += len(cluster.spike_times)
-
-    # plt.plot(depth_map.keys(), depth_map.values(), ".")
 
     fig, ax1 = plt.subplots()
     ax2 = ax1.twinx()
@@ -115,9 +110,8 @@ def plot_channel_depth_profile(
 
     n_spikes_per_channel = [0] * 384
     for cluster in clusters_info:
-        # if cluster.info == ClusterType.GOOD:
-        n_spikes_per_channel[cluster.channel] += len(cluster.spike_times)
-
+        if cluster.info == ClusterType.GOOD:
+            n_spikes_per_channel[cluster.channel] += len(cluster.spike_times)
     region_channel = np.array(region_channel)
     plot_xlabels: Dict[str, List[float]] = {}
     for region in set(region_channel):
@@ -135,12 +129,48 @@ def plot_channel_depth_profile(
         list(plot_xlabels.keys()),
         rotation=90,
     )
-    # ax2.set_xticks(
-    #     np.arange(384)[::2], (np.arange(384) * 20)[::2].astype(str), rotation=90
-    # )
+    # ax2.set_xticks(np.arange(384)[::2], np.arange(384)[::2].astype(str), rotation=90)
 
     for position in plot_xlabels.values():
         plt.axvline(position[0], color="black", linestyle="--")
     ax1.legend()
     ax2.legend()
-    plt.show()
+    plt.savefig(
+        HERE.parent / "figures" / "depth_profiles" / f"{recording_id}_depth_profile.png"
+    )
+
+
+def plot_lfp_spectrogram(lfp: np.ndarray, recording_id: str) -> None:
+    result = []
+    lfp = lfp[:, : SAMPLING_RATE_LFP * 180]
+
+    max_freq = 550
+    edges = (
+        list(range(2, 10, 1))
+        + list(range(10, 100, 10))
+        + list(range(100, max_freq, 50))
+    )
+
+    for idx in range(len(edges) - 1):
+        start = edges[idx]
+        end = edges[idx + 1]
+
+        result.append(
+            compute_power(bandpass_filter(lfp, start, end, SAMPLING_RATE_LFP, order=3))
+        )
+
+    result = np.array(result).T
+    result[15, :] = 0
+    result = np.log(result)
+    result[result == -np.inf] = 0
+    # result = zscore(result, axis=0)
+    sns.heatmap(
+        result,
+        square=False,
+        cmap=sns.color_palette("YlOrBr", as_cmap=True),
+        cbar_kws={"label": "Log power"},
+    )
+    plt.xticks(range(len(edges)), edges)
+    plt.xlabel("Frequency (Hz)")
+    plt.ylabel("Channel")
+    plt.savefig(HERE.parent / "figures" / f"{recording_id}-spectrogram.png")
