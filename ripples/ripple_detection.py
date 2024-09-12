@@ -1,4 +1,5 @@
 from typing import List
+from matplotlib import pyplot as plt
 import numpy as np
 
 from ripples.models import CandidateEvent, RotaryEncoder
@@ -112,6 +113,34 @@ def average_ripple_speed(
     end_idx = smallest_positive_index(end_time - rotary_encoder.time)
     distance = rotary_encoder.position[end_idx] - rotary_encoder.position[start_idx]
     return distance / (end_time - start_time)
+
+
+def rotary_encoder_percentage_resting(
+    rotary_encoder: RotaryEncoder, threshold: float, max_time: float, plot: bool = False
+) -> float:
+    """Checked with plotting but writ tests"""
+
+    bin_size = 1
+    bin_edges = np.arange(0, max_time, bin_size)
+
+    speed = []
+    for idx in range(len(bin_edges) - 1):
+        start_time = bin_edges[idx]
+        end_time = bin_edges[idx + 1]
+        start_idx = smallest_positive_index(start_time - rotary_encoder.time)
+        end_idx = smallest_positive_index(end_time - rotary_encoder.time)
+        distance = rotary_encoder.position[end_idx] - rotary_encoder.position[start_idx]
+        speed.append(distance / (end_time - start_time))
+
+    speed = np.array(speed)
+
+    if plot:
+        _, ax1 = plt.subplots()
+        ax2 = ax1.twinx()
+        ax1.plot(bin_edges[:-1], speed, color="red")
+        ax2.plot(rotary_encoder.time, rotary_encoder.position)
+
+    return sum(speed < threshold) / len(speed)
 
 
 def get_resting_ripples(

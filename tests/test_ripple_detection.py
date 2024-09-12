@@ -6,7 +6,9 @@ from ripples.ripple_detection import (
     detect_ripple_events,
     get_resting_ripples,
     remove_duplicate_ripples,
+    rotary_encoder_percentage_resting,
 )
+from unittest.mock import MagicMock
 
 from ripples.consts import SAMPLING_RATE_LFP
 
@@ -314,3 +316,58 @@ def test_some_resting_ripples() -> None:
     expected_resting_ripples = [ripples[1]]
     result = get_resting_ripples(ripples, rotary_encoder, 1, SAMPLING_RATE_LFP)
     assert result == expected_resting_ripples
+
+
+# Test 1: Test with normal speed data and no rest periods
+def test_rotary_encoder_percentage_resting_above_threshold() -> None:
+    # Mock RotaryEncoder with increasing position over time
+    rotary_encoder = MagicMock()
+    rotary_encoder.time = np.array([0, 1, 2, 3, 4, 5])
+    rotary_encoder.position = np.array([0, 1, 2, 3, 4, 5])
+
+    # Threshold below the minimum speed, max_time larger than the time array
+    result = rotary_encoder_percentage_resting(
+        rotary_encoder, threshold=0.9, max_time=6
+    )
+    assert result == 0.0, "Expected no resting periods but got some."
+
+
+def test_rotary_encoder_percentage_resting_all_rest() -> None:
+    # Mock RotaryEncoder with no movement (stationary)
+    rotary_encoder = MagicMock()
+    rotary_encoder.time = np.array([0, 1, 2, 3, 4, 5])
+    rotary_encoder.position = np.array([0, 0, 0, 0, 0, 0])
+
+    # Threshold above the maximum speed (speed is 0 everywhere)
+    result = rotary_encoder_percentage_resting(
+        rotary_encoder, threshold=0.1, max_time=6
+    )
+    assert result == 1, "Expected all resting period"
+
+
+# Test 3: Test with mixed movement (part resting, part moving)
+def test_rotary_encoder_percentage_resting_mixed() -> None:
+    # Mock RotaryEncoder with some movement and some stationary
+    rotary_encoder = MagicMock()
+    rotary_encoder.time = np.array([0, 1, 2, 3, 4, 5])
+    rotary_encoder.position = np.array([0, 0, 0, 1, 2, 4])
+
+    result = rotary_encoder_percentage_resting(
+        rotary_encoder, threshold=1.1, max_time=6
+    )
+    assert result == 0.8
+
+
+def test_rotary_encoder_percentage_resting_at_end() -> None:
+    # Mock RotaryEncoder with stationary data
+    rotary_encoder = MagicMock()
+    rotary_encoder.time = np.array([0, 1, 2, 3, 4, 5])
+    rotary_encoder.position = np.array([0, 10, 20, 30, 40, 50])
+
+    result = rotary_encoder_percentage_resting(
+        rotary_encoder, threshold=0.1, max_time=10
+    )
+
+    # Does not include the max time itself which maybe is not the correct behaviour but
+    # won't make a difference
+    assert result == 4 / 9
