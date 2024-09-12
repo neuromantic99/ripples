@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import List
+from typing import List, Tuple
 
 import numpy as np
 import seaborn as sns
@@ -79,7 +79,7 @@ def spikes_per_ripple(WTs: List[Session], NLGFs: List[Session]) -> None:
     plt.figure()
     sns.stripplot({"WTs": wt_data, "NLGFs": nlgf_data}, color="black")
     sns.boxplot({"WTs": wt_data, "NLGFs": nlgf_data}, showfliers=False)
-    plt.ylabel("Spikes per ripple")
+    plt.ylabel("Spikes per ripple per CA1 neuron")
     plt.tight_layout()
     plt.savefig(HERE.parent / "figures" / "spkes_per_ripple.png")
     plt.show()
@@ -319,7 +319,7 @@ def plot_grand_ripple_triggered_average(
     plt.savefig(HERE.parent / "figures" / "ripple_triggered_spikes.png")
 
 
-def main() -> None:
+def load_sessions() -> Tuple[List[Session], List[Session]]:
 
     results_files = Path(RESULTS_PATH).glob("*.json")
     WTs: List[Session] = []
@@ -339,6 +339,13 @@ def main() -> None:
             NLGFs.append(result)
         else:
             raise ValueError(f"Unknown type of recording: {file.name}")
+
+    return WTs, NLGFs
+
+
+def main() -> None:
+
+    WTs, NLGFs = load_sessions()
 
     spikes_per_ripple(WTs, NLGFs)
     # number_of_ripples_plot(WTs, NLGFs)

@@ -1,3 +1,3 @@
-from ripples.analysis import main
+from ripples.criticality import main
 
 main()
