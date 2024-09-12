@@ -34,6 +34,7 @@ class RipplesSummary(BaseModel):
     ca1: List[List[int]]
     ripple_power: List[float]
     resting_percentage: float
+    events: List[CandidateEvent]
 
 
 @dataclass
@@ -45,6 +46,8 @@ class RotaryEncoder:
 class Session(BaseModel):
     ripples_summary: RipplesSummary
     clusters_info: List[ClusterInfo]
+    id: str
+    length_seconds: float
 
 
 class ProbeCoordinate(BaseModel):
@@ -53,3 +56,9 @@ class ProbeCoordinate(BaseModel):
     AZ: float
     elevation: float
     depth: float
+
+
+@dataclass
+class SessionToAverage:
+    id: str
+    data: float
