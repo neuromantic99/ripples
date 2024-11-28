@@ -1,3 +1,4 @@
+import os
 import random
 from typing import Any, Dict, List
 
@@ -10,7 +11,7 @@ import seaborn as sns
 
 from ripples.consts import SAMPLING_RATE_LFP, HERE
 from ripples.models import ClusterInfo, ClusterType, RotaryEncoder, CandidateEvent
-from ripples.utils import bandpass_filter, compute_power
+from ripples.utils import bandpass_filter, compute_power, moving_average
 
 
 def plot_ripples(ripples: List[List[CandidateEvent]], filtered_lfp: np.ndarray) -> None:
@@ -110,11 +111,19 @@ def plot_channel_depth_profile(
 
     n_spikes_per_channel = [0] * 384
     for cluster in clusters_info:
-        if cluster.info == ClusterType.GOOD:
+        if cluster.info in [ClusterType.GOOD, ClusterType.MUA]:
             n_spikes_per_channel[cluster.channel] += len(cluster.spike_times)
+
+    n_spikes_per_channel = moving_average(np.array(n_spikes_per_channel), 3)
+
     region_channel = np.array(region_channel)
+
     plot_xlabels: Dict[str, List[float]] = {}
     for region in set(region_channel):
+
+        if region not in ["Outside brain", "CA1"]:
+            continue
+
         region_idxs = np.where(region_channel == region)[0]
         plot_xlabels[region] = [
             np.min(region_idxs).astype(float),
@@ -133,11 +142,15 @@ def plot_channel_depth_profile(
 
     for position in plot_xlabels.values():
         plt.axvline(position[0], color="black", linestyle="--")
+        plt.axvline(position[2], color="black", linestyle="--")
     ax1.legend()
-    ax2.legend()
-    plt.savefig(
-        HERE.parent / "figures" / "depth_profiles" / f"{recording_id}_depth_profile.png"
-    )
+    ax2.legend(loc="center right")
+
+    figure_path = HERE.parent / "figures" / "depth_profiles"
+    if not figure_path.exists():
+        os.makedirs(figure_path)
+
+    plt.savefig(figure_path / f"{recording_id}_depth_profile.png")
 
 
 def plot_lfp_spectrogram(lfp: np.ndarray, recording_id: str) -> None:
