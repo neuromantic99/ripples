@@ -42,7 +42,7 @@ from ripples.utils_npyx import load_lfp_npyx
 
 REFERENCE_CHANNEL = 191  # For the long linear, change depending on probe
 
-UMBRELLA = Path("/Volumes/MarcBusche/Jana/Neuropixels")
+UMBRELLA = Path("//128.40.224.64/marcbusche/Jana/Neuropixels")
 
 
 def preprocess(lfp: np.ndarray) -> np.ndarray:
@@ -61,7 +61,7 @@ def map_channels_to_regions(coordinates: ProbeCoordinate, n_channels: int) -> Li
     # Clone this: github.com/neuromantic99/neuropixels_trajectory_explorer
     # Add npy matlab to the same folder (github.com/kwikteam/npy-matlab)
     # Set the local path to the repo here:
-    path_to_npte = Path("/Users/jamesrowland/Code/neuropixels_trajectory_explorer/")
+    path_to_npte = Path("C:/Python_code/neuropixels_trajectory_explorer")
 
     eng = matlab.engine.start_matlab()
     eng.cd(str(path_to_npte), nargout=0)
@@ -321,6 +321,14 @@ def cache_session(metadata_probe: pd.Series) -> None:
         if region is not None and "CA1" in region
     ]
 
+    # find CA1 channel with highest Ripple power and +/- to channel to detect ripples, then do CAR
+    # swr_power = compute_power(
+    #     bandpass_filter(lfp, 125, 250, SAMPLING_RATE_LFP, order=4)
+    # )
+
+    # med_across_channels = np.nanmedian(lfp(CA1channels,:), axis=0)
+    # lfp_CA1_CAR = np.subtract(lfp, med_across_channels)'
+
     candidate_events = get_candidate_ripples(
         lfp[CA1_channels, :], sampling_rate=SAMPLING_RATE_LFP
     )
@@ -414,7 +422,7 @@ def load_channel_regions(metadata_probe: pd.Series) -> List[str]:
 
 def main() -> None:
 
-    reprocess = True
+    reprocess = False
     metadata = gsheet2df("1HSERPbm-kDhe6X8bgflxvTuK24AfdrZJzbdBy11Hpcg", "sessions", 1)
 
     # metadata = metadata[metadata["CA1 detected"] == "TRUE"]
