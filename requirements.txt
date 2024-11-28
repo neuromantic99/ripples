@@ -13,3 +13,4 @@ matlabengine
 nptyping
 imageio
 napari[all]
+npyx

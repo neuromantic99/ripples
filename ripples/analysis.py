@@ -2,10 +2,11 @@ import importlib
 import json
 from pathlib import Path
 import sys
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
 from scipy.ndimage import gaussian_filter1d
 from scipy.stats import zscore
 import matplotlib.pyplot as plt
+import csv
 
 import mat73
 import numpy as np
@@ -113,16 +114,16 @@ def map_channels_to_regions(coordinates: ProbeCoordinate, n_channels: int) -> Li
     return area_channel
 
 
-def load_lfp(lfp_path: Path) -> np.ndarray:
+def load_lfp(lfp_path: Path) -> Tuple[np.ndarray, np.ndarray]:
 
-    lfp = load_lfp_npyx(str(UMBRELLA / lfp_path))
+    lfp, sync = load_lfp_npyx(str(UMBRELLA / lfp_path))
 
     # The long linear channels are interleaved (confirmed by plotting)
     lfp = np.concatenate((lfp[0::2, :], lfp[1::2, :]), axis=0)
     lfp[191, :] = 0
     # TODO: PRETTY SURE THIS FLIP SHOULD NOT BE HERE BUT AHHHHHHHHHHHHH
     # return np.flip(lfp, axis=0)
-    return lfp
+    return (lfp, sync)
 
 
 def check_channel_order(clusters_info: List[ClusterInfo]) -> None:
@@ -226,7 +227,7 @@ def get_distance_matrix(
     return 1 - crosscorr
 
 
-def load_rotary_encoder(rotary_encoder_path: Path) -> RotaryEncoder:
+def load_rotary_encoder(rotary_encoder_path: Path, sync: np.ndarray) -> RotaryEncoder:
     """scipy io loads this in an insane way"""
     rotary_encoder = io.loadmat(UMBRELLA / rotary_encoder_path)["data"][0][0]
     positions = rotary_encoder[1][0]
@@ -236,6 +237,11 @@ def load_rotary_encoder(rotary_encoder_path: Path) -> RotaryEncoder:
     ), "Something has probably gone wrong with the unwrapping"
 
     time = rotary_encoder[2][0]
+
+    # This is the most obvious way to do this, not sure if there's a better way
+    recording_onset = np.where(sync > 0.5)[0][0]
+    time = time + recording_onset / SAMPLING_RATE_LFP
+
     assert np.all(np.diff(time) >= 0)
     assert positions.shape[0] == time.shape[0]
     return RotaryEncoder(time=time, position=position_cm)
@@ -284,15 +290,30 @@ def cache_session(metadata_probe: pd.Series) -> None:
         depth=depth,
     )
 
-    lfp = load_lfp(Path(metadata_probe["LFP path"]))
+    lfp, sync = load_lfp(Path(metadata_probe["LFP path"]))
+
+    # TODO: common average referencing
+
     n_channels = lfp.shape[0]
     region_channel = map_channels_to_regions(coordinates, n_channels)
     clusters_info = load_spikes(Path(metadata_probe["Kilosort path"]), region_channel)
     check_channel_order(clusters_info)
-    rotary_encoder = load_rotary_encoder(Path(metadata_probe["Rotary encoder path"]))
+
+    rotary_encoder = load_rotary_encoder(
+        Path(metadata_probe["Rotary encoder path"]), sync
+    )
+
+    with open(
+        f"/Users/jamesrowland/Code/ripples/results/channel_regions/{recording_id}.csv",
+        "w",
+    ) as f:
+        write = csv.writer(f)
+        write.writerow(region_channel)
 
     plot_lfp_spectrogram(lfp, recording_id)
     plot_channel_depth_profile(lfp, region_channel, clusters_info, recording_id)
+
+    # TODO: Take the 5 channels with the maximum SWR power to compute ripples in
 
     CA1_channels = [
         idx
@@ -381,11 +402,22 @@ def cache_session(metadata_probe: pd.Series) -> None:
         json.dump(session.model_dump(), f)
 
 
+def load_channel_regions(metadata_probe: pd.Series) -> List[str]:
+    recording_id = f"{metadata_probe['Session']}-{metadata_probe['Recording Name']}-Probe{metadata_probe['Probe']}"
+    with open(
+        f"/Users/jamesrowland/Code/ripples/results/channel_regions/{recording_id}.csv",
+        "r",
+    ) as f:
+        reader = csv.reader(f)
+        return list(reader)[0]
+
+
 def main() -> None:
 
     reprocess = True
     metadata = gsheet2df("1HSERPbm-kDhe6X8bgflxvTuK24AfdrZJzbdBy11Hpcg", "sessions", 1)
-    metadata = metadata[metadata["CA1 detected"] == "TRUE"]
+
+    # metadata = metadata[metadata["CA1 detected"] == "TRUE"]
     metadata = metadata[metadata["Ignore"] == "FALSE"]
 
     sessions_keep = []
