@@ -1,5 +1,6 @@
 import importlib
 import json
+import os
 from pathlib import Path
 import sys
 from typing import Any, Dict, List, Tuple
@@ -33,6 +34,8 @@ from ripples.ripple_detection import (
 )
 
 from ripples.utils import (
+    bandpass_filter,
+    compute_power,
     degrees_to_cm,
     interleave_arrays,
     smallest_positive_index,
@@ -120,10 +123,21 @@ def load_lfp(lfp_path: Path) -> Tuple[np.ndarray, np.ndarray]:
 
     # The long linear channels are interleaved (confirmed by plotting)
     lfp = np.concatenate((lfp[0::2, :], lfp[1::2, :]), axis=0)
-    lfp[191, :] = 0
+    #lfp[191, :] = 0 Now setting it to NaN in a seperate function
     # TODO: PRETTY SURE THIS FLIP SHOULD NOT BE HERE BUT AHHHHHHHHHHHHH
     # return np.flip(lfp, axis=0)
     return (lfp, sync)
+
+def lfp_clear_internalReferenceChannel(lfp):
+    int_ref_channel = 191
+    lfp=lfp.astype(float)
+    lfp[int_ref_channel, :] = np.nan
+    return lfp
+
+def lfp_get_noise_levels(lfp):
+    rms_perChannel = np.sqrt(np.nanmean(lfp**2, axis=1))
+    rms_perChannel = rms_perChannel.tolist()
+    return rms_perChannel
 
 
 def check_channel_order(clusters_info: List[ClusterInfo]) -> None:
@@ -292,7 +306,8 @@ def cache_session(metadata_probe: pd.Series) -> None:
 
     lfp, sync = load_lfp(Path(metadata_probe["LFP path"]))
 
-    # TODO: common average referencing
+    lfp=lfp_clear_internalReferenceChannel(lfp)
+    rms_perChannel=lfp_get_noise_levels(lfp)
 
     n_channels = lfp.shape[0]
     region_channel = map_channels_to_regions(coordinates, n_channels)
@@ -302,10 +317,14 @@ def cache_session(metadata_probe: pd.Series) -> None:
     rotary_encoder = load_rotary_encoder(
         Path(metadata_probe["Rotary encoder path"]), sync
     )
+    
+    data_path_channel_regions = HERE.parent / "results" / "channel_regions"
+    
+    if not data_path_channel_regions.exists():
+        os.makedirs(data_path_channel_regions)
 
-    with open(
-        f"/Users/jamesrowland/Code/ripples/results/channel_regions/{recording_id}.csv",
-        "w",
+    with open(data_path_channel_regions/ f"{recording_id}.csv",
+            "w",
     ) as f:
         write = csv.writer(f)
         write.writerow(region_channel)
@@ -313,30 +332,37 @@ def cache_session(metadata_probe: pd.Series) -> None:
     plot_lfp_spectrogram(lfp, recording_id)
     plot_channel_depth_profile(lfp, region_channel, clusters_info, recording_id)
 
-    # TODO: Take the 5 channels with the maximum SWR power to compute ripples in
-
-    CA1_channels = [
+    
+    all_CA1_channels = [
         idx
         for idx, region in enumerate(region_channel)
         if region is not None and "CA1" in region
     ]
 
-    # find CA1 channel with highest Ripple power and +/- to channel to detect ripples, then do CAR
-    # swr_power = compute_power(
-    #     bandpass_filter(lfp, 125, 250, SAMPLING_RATE_LFP, order=4)
-    # )
+    # # find CA1 channel with highest Ripple power and +/- to channel to detect ripples, then do CAR
+    swr_power = compute_power(
+         bandpass_filter(lfp, 125, 250, SAMPLING_RATE_LFP, order=4)
+     )
+    max_powerChanCA1 = np.argmax(swr_power[all_CA1_channels])
+    CA1_channels=all_CA1_channels[max_powerChanCA1-2:max_powerChanCA1+3]
 
-    # med_across_channels = np.nanmedian(lfp(CA1channels,:), axis=0)
-    # lfp_CA1_CAR = np.subtract(lfp, med_across_channels)'
+    #catch in case reference channel is included
+    assert 191 not in CA1_channels 
+
+
+    # CAR ToDo: test if we want to have it in here (take mean across channels and then subtract from each channel)
+    lfp_CA1=lfp[CA1_channels,:]
+    common_average = np.nanmedian(lfp_CA1, axis=0)
+    lfp_CA1_CAR = np.subtract(lfp_CA1, common_average)
+    
 
     candidate_events = get_candidate_ripples(
-        lfp[CA1_channels, :], sampling_rate=SAMPLING_RATE_LFP
+        lfp_CA1_CAR, sampling_rate=SAMPLING_RATE_LFP
     )
 
-    common_average = np.mean(lfp[CA1_channels, :], axis=0)
 
     ripples_channels = filter_candidate_ripples(
-        candidate_events, lfp[CA1_channels, :], common_average, SAMPLING_RATE_LFP
+        candidate_events, lfp_CA1_CAR, common_average, SAMPLING_RATE_LFP
     )
 
     # Flattening makes further processing easier but loses the channel information
@@ -401,6 +427,7 @@ def cache_session(metadata_probe: pd.Series) -> None:
         clusters_info=clusters_info,
         id=metadata_probe["Session"],
         length_seconds=lfp.shape[1] / SAMPLING_RATE_LFP,
+        rms_perChannel=rms_perChannel,
     )
 
     with open(
