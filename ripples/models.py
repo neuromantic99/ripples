@@ -20,6 +20,9 @@ class ClusterInfo:
     channel: int
     depth: float
 
+class ChannelInfo:
+    rms_perChannel: List [float]
+
 
 class CandidateEvent(BaseModel):
     onset: int
