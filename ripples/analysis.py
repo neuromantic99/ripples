@@ -129,14 +129,15 @@ def load_lfp(lfp_path: Path) -> Tuple[np.ndarray, np.ndarray]:
 
 def lfp_clear_internal_reference_channel(lfp: np.ndarray) -> np.ndarray:
     int_ref_channel = 191
-    lfp=lfp.astype(float)
+    lfp = lfp.astype(float)
     lfp[int_ref_channel, :] = np.nan
     return lfp
 
+
 def lfp_get_noise_levels(lfp):
-    rms_perChannel = np.sqrt(np.nanmean(lfp**2, axis=1))
-    rms_perChannel = rms_perChannel.tolist()
-    return rms_perChannel
+    rms_per_channel = np.sqrt(np.nanmean(lfp**2, axis=1))
+    rms_per_channel = rms_per_channel.tolist()
+    return rms_per_channel
 
 
 def check_channel_order(clusters_info: List[ClusterInfo]) -> None:
@@ -305,8 +306,8 @@ def cache_session(metadata_probe: pd.Series) -> None:
 
     lfp, sync = load_lfp(Path(metadata_probe["LFP path"]))
 
-    lfp=lfp_clear_internalReferenceChannel(lfp)
-    rms_perChannel=lfp_get_noise_levels(lfp)
+    lfp = lfp_clear_internal_reference_channel(lfp)
+    rms_per_channel = lfp_get_noise_levels(lfp)
 
     n_channels = lfp.shape[0]
     region_channel = map_channels_to_regions(coordinates, n_channels)
@@ -316,14 +317,15 @@ def cache_session(metadata_probe: pd.Series) -> None:
     rotary_encoder = load_rotary_encoder(
         Path(metadata_probe["Rotary encoder path"]), sync
     )
-    
+
     data_path_channel_regions = HERE.parent / "results" / "channel_regions"
-    
+
     if not data_path_channel_regions.exists():
         os.makedirs(data_path_channel_regions)
 
-    with open(data_path_channel_regions/ f"{recording_id}.csv",
-            "w",
+    with open(
+        data_path_channel_regions / f"{recording_id}.csv",
+        "w",
     ) as f:
         write = csv.writer(f)
         write.writerow(region_channel)
@@ -331,7 +333,6 @@ def cache_session(metadata_probe: pd.Series) -> None:
     plot_lfp_spectrogram(lfp, recording_id)
     plot_channel_depth_profile(lfp, region_channel, clusters_info, recording_id)
 
-    
     all_CA1_channels = [
         idx
         for idx, region in enumerate(region_channel)
@@ -340,24 +341,22 @@ def cache_session(metadata_probe: pd.Series) -> None:
 
     # Find CA1 channel with highest Ripple power and +/- to channel to detect ripples, then do CAR
     swr_power = compute_power(
-         bandpass_filter(lfp, 125, 250, SAMPLING_RATE_LFP, order=4)
-     )
+        bandpass_filter(lfp, 125, 250, SAMPLING_RATE_LFP, order=4)
+    )
     max_powerChanCA1 = np.argmax(swr_power[all_CA1_channels])
-    CA1_channels=all_CA1_channels[max_powerChanCA1-2:max_powerChanCA1+3]
+    CA1_channels = all_CA1_channels[max_powerChanCA1 - 2 : max_powerChanCA1 + 3]
 
     assert 191 not in CA1_channels, "Reference channel should not be included in CA1 channels" 
 
 
     # CAR ToDo: test if we want to have it in here (take mean across channels and then subtract from each channel)
-    lfp_CA1=lfp[CA1_channels,:]
+    lfp_CA1 = lfp[CA1_channels, :]
     common_average = np.nanmedian(lfp_CA1, axis=0)
     lfp_CA1_CAR = np.subtract(lfp_CA1, common_average)
-    
 
     candidate_events = get_candidate_ripples(
         lfp_CA1_CAR, sampling_rate=SAMPLING_RATE_LFP
     )
-
 
     ripples_channels = filter_candidate_ripples(
         candidate_events, lfp_CA1_CAR, common_average, SAMPLING_RATE_LFP
@@ -425,7 +424,7 @@ def cache_session(metadata_probe: pd.Series) -> None:
         clusters_info=clusters_info,
         id=metadata_probe["Session"],
         length_seconds=lfp.shape[1] / SAMPLING_RATE_LFP,
-        rms_perChannel=rms_perChannel,
+        rms_per_channel=rms_per_channel,
     )
 
     with open(

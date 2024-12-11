@@ -85,9 +85,9 @@ def plot_frequency_depth(lfp: np.ndarray, ax: Any | None = None) -> None:
     theta_power = compute_power(bandpass_filter(lfp, 4, 8, SAMPLING_RATE_LFP, order=3))
     delta_power = compute_power(bandpass_filter(lfp, 1, 3, SAMPLING_RATE_LFP, order=3))
     plotting_class = ax if ax is not None else plt
-    plotting_class.plot(zscore(swr_power,nan_policy='omit'), label="SWR")
-    plotting_class.plot(zscore(theta_power,nan_policy='omit'), label="Theta")
-    plotting_class.plot(zscore(delta_power,nan_policy='omit'), label="Delta")
+    plotting_class.plot(zscore(swr_power, nan_policy="omit"), label="SWR")
+    plotting_class.plot(zscore(theta_power, nan_policy="omit"), label="Theta")
+    plotting_class.plot(zscore(delta_power, nan_policy="omit"), label="Delta")
 
     if ax is None:
         plt.ylabel("Power (z-scored)")

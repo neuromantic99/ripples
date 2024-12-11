@@ -20,9 +20,6 @@ class ClusterInfo:
     channel: int
     depth: float
 
-class ChannelInfo:
-    rms_perChannel: List [float]
-
 
 class CandidateEvent(BaseModel):
     onset: int
@@ -51,6 +48,7 @@ class Session(BaseModel):
     clusters_info: List[ClusterInfo]
     id: str
     length_seconds: float
+    rms_per_channel: List[float]
 
 
 class ProbeCoordinate(BaseModel):
