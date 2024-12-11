@@ -85,9 +85,9 @@ def plot_frequency_depth(lfp: np.ndarray, ax: Any | None = None) -> None:
     theta_power = compute_power(bandpass_filter(lfp, 4, 8, SAMPLING_RATE_LFP, order=3))
     delta_power = compute_power(bandpass_filter(lfp, 1, 3, SAMPLING_RATE_LFP, order=3))
     plotting_class = ax if ax is not None else plt
-    plotting_class.plot(zscore(swr_power), label="SWR")
-    plotting_class.plot(zscore(theta_power), label="Theta")
-    plotting_class.plot(zscore(delta_power), label="Delta")
+    plotting_class.plot(zscore(swr_power, nan_policy="omit"), label="SWR")
+    plotting_class.plot(zscore(theta_power, nan_policy="omit"), label="Theta")
+    plotting_class.plot(zscore(delta_power, nan_policy="omit"), label="Delta")
 
     if ax is None:
         plt.ylabel("Power (z-scored)")
@@ -186,4 +186,9 @@ def plot_lfp_spectrogram(lfp: np.ndarray, recording_id: str) -> None:
     plt.xticks(range(len(edges)), edges)
     plt.xlabel("Frequency (Hz)")
     plt.ylabel("Channel")
-    plt.savefig(HERE.parent / "figures" / f"{recording_id}-spectrogram.png")
+
+    figure_path = HERE.parent / "figures" / "lfp_spectrograms"
+    if not figure_path.exists():
+        os.makedirs(figure_path)
+
+    plt.savefig(figure_path / f"{recording_id}-spectrogram.png")

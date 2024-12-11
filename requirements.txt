@@ -9,7 +9,6 @@ google-auth-oauthlib
 mypy
 pydantic
 seaborn
-matlabengine
 nptyping
 imageio
 napari[all]

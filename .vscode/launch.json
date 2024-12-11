@@ -1,6 +1,7 @@
 {
     "version": "0.2.0",
     "configurations": [
+      
       {
         "name": "run analysis.py",
         "type": "debugpy",
@@ -15,7 +16,15 @@
         "request": "launch",
         "purpose": ["debug-test"],
         "justMyCode": true,
-    }
+    },  
+    {
+      "name": "gsheets importer",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "ripples/gsheets_importer.py",
+      "console": "integratedTerminal",
+      "justMyCode": true
+  }
     ]
   }
   
