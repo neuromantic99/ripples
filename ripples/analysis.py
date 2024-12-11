@@ -345,8 +345,7 @@ def cache_session(metadata_probe: pd.Series) -> None:
     max_powerChanCA1 = np.argmax(swr_power[all_CA1_channels])
     CA1_channels=all_CA1_channels[max_powerChanCA1-2:max_powerChanCA1+3]
 
-    #catch in case reference channel is included
-    assert 191 not in CA1_channels 
+    assert 191 not in CA1_channels, "Reference channel should not be included in CA1 channels" 
 
 
     # CAR ToDo: test if we want to have it in here (take mean across channels and then subtract from each channel)
