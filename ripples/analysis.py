@@ -338,7 +338,7 @@ def cache_session(metadata_probe: pd.Series) -> None:
         if region is not None and "CA1" in region
     ]
 
-    # # find CA1 channel with highest Ripple power and +/- to channel to detect ripples, then do CAR
+    # Find CA1 channel with highest Ripple power and +/- to channel to detect ripples, then do CAR
     swr_power = compute_power(
          bandpass_filter(lfp, 125, 250, SAMPLING_RATE_LFP, order=4)
      )
