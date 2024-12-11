@@ -127,7 +127,7 @@ def load_lfp(lfp_path: Path) -> Tuple[np.ndarray, np.ndarray]:
     # return np.flip(lfp, axis=0)
     return (lfp, sync)
 
-def lfp_clear_internalReferenceChannel(lfp):
+def lfp_clear_internal_reference_channel(lfp: np.ndarray) -> np.ndarray:
     int_ref_channel = 191
     lfp=lfp.astype(float)
     lfp[int_ref_channel, :] = np.nan
