@@ -123,7 +123,6 @@ def load_lfp(lfp_path: Path) -> Tuple[np.ndarray, np.ndarray]:
 
     # The long linear channels are interleaved (confirmed by plotting)
     lfp = np.concatenate((lfp[0::2, :], lfp[1::2, :]), axis=0)
-    #lfp[191, :] = 0 Now setting it to NaN in a seperate function
     # TODO: PRETTY SURE THIS FLIP SHOULD NOT BE HERE BUT AHHHHHHHHHHHHH
     # return np.flip(lfp, axis=0)
     return (lfp, sync)
