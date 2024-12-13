@@ -26,6 +26,9 @@ class CandidateEvent(BaseModel):
     offset: int
     peak_power: int | float
     peak_idx: int
+    frequency: float
+    detection_channel: int
+
 
 
 class RipplesSummary(BaseModel):
@@ -34,6 +37,7 @@ class RipplesSummary(BaseModel):
     ca1: List[List[int]]
     ripple_power: List[float]
     resting_percentage: float
+    resting_time: float
     events: List[CandidateEvent]
 
 
@@ -49,6 +53,8 @@ class Session(BaseModel):
     id: str
     length_seconds: float
     rms_per_channel: List[float]
+    CA1_channels_analysed: List[int]
+    CA1_channels_swr_pow: List[float]
 
 
 class ProbeCoordinate(BaseModel):
