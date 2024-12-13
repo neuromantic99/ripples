@@ -140,6 +140,19 @@ def lfp_get_noise_levels(lfp: np.ndarray)-> np.ndarray:
     return rms_per_channel
 
 
+def lfp_clear_internal_reference_channel(lfp: np.ndarray) -> np.ndarray:
+    int_ref_channel = 191
+    lfp = lfp.astype(float)
+    lfp[int_ref_channel, :] = np.nan
+    return lfp
+
+
+def lfp_get_noise_levels(lfp: np.ndarray) -> np.ndarray:
+    rms_per_channel = np.sqrt(np.nanmean(lfp**2, axis=1))
+    rms_per_channel = rms_per_channel.tolist()
+    return rms_per_channel
+
+
 def check_channel_order(clusters_info: List[ClusterInfo]) -> None:
     """Makes sure the deinterleaving is required and has worked"""
     prev = None
@@ -345,6 +358,7 @@ def cache_session(metadata_probe: pd.Series) -> None:
     )
     max_powerChanCA1 = np.argmax(swr_power[all_CA1_channels])
     CA1_channels = all_CA1_channels[max_powerChanCA1 - 2 : max_powerChanCA1 + 3]
+<<<<<<< HEAD
     CA1_channels_swr_pow = swr_power[CA1_channels]
     CA1_channels_swr_pow = CA1_channels_swr_pow.tolist()
 
@@ -372,6 +386,22 @@ def cache_session(metadata_probe: pd.Series) -> None:
     a = [event for events in candidate_events for event in events]
     print(f"Number of ripples before filtering: {len(a)}")
 
+=======
+
+    assert (
+        191 not in CA1_channels
+    ), "Reference channel should not be included in CA1 channels"
+
+    # CAR ToDo: test if we want to have it in here (take mean across channels and then subtract from each channel)
+    lfp_CA1 = lfp[CA1_channels, :]
+    common_average = np.nanmedian(lfp_CA1, axis=0)
+    lfp_CA1_CAR = np.subtract(lfp_CA1, common_average)
+
+    candidate_events = get_candidate_ripples(
+        lfp_CA1_CAR, sampling_rate=SAMPLING_RATE_LFP
+    )
+
+>>>>>>> main
     ripples_channels = filter_candidate_ripples(
         candidate_events, lfp_CA1_CAR, common_average, SAMPLING_RATE_LFP
     )
@@ -446,8 +476,11 @@ def cache_session(metadata_probe: pd.Series) -> None:
         id=metadata_probe["Session"],
         length_seconds=lfp.shape[1] / SAMPLING_RATE_LFP,
         rms_per_channel=rms_per_channel,
+<<<<<<< HEAD
         CA1_channels_analysed=CA1_channels,
         CA1_channels_swr_pow=CA1_channels_swr_pow,
+=======
+>>>>>>> main
     )
 
     with open(
