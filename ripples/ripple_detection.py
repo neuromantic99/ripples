@@ -117,7 +117,8 @@ def average_ripple_speed(
 
 def rotary_encoder_percentage_resting(
     rotary_encoder: RotaryEncoder, threshold: float, max_time: float, plot: bool = False
-) -> float:
+) -> List[float|int]:
+
     """Checked with plotting but writ tests"""
 
     bin_size = 1
@@ -133,6 +134,9 @@ def rotary_encoder_percentage_resting(
         speed.append(distance / (end_time - start_time))
 
     speed = np.array(speed)
+    resting_percentage = sum(speed < threshold)/len(speed)
+    resting_time = sum(speed < threshold)
+    
 
     if plot:
         _, ax1 = plt.subplots()
@@ -140,7 +144,7 @@ def rotary_encoder_percentage_resting(
         ax1.plot(bin_edges[:-1], speed, color="red")
         ax2.plot(rotary_encoder.time, rotary_encoder.position)
 
-    return sum(speed < threshold) / len(speed)
+    return [resting_percentage, resting_time]
 
 
 def get_resting_ripples(
@@ -161,9 +165,13 @@ def get_resting_ripples(
 
 
 def detect_ripple_events(
-    channel: np.ndarray | List[int | float],
+    channel: int, lfp: np.ndarray, CA1_channels: List[int], sampling_rate: int
 ) -> List[CandidateEvent]:
-    median = np.median(channel)
+    
+    print(lfp[channel,:].size)
+    ripple_band_pre = compute_envelope(bandpass_filter(lfp[channel,:].reshape(1,lfp[channel,:].size), 125, 250, sampling_rate))
+    ripple_band=ripple_band_pre.reshape(lfp[channel,:].size,1)
+    median = np.median(ripple_band)
     upper_threshold = median * 5
     lower_threshold = median * 2.5
     candidate_events: List[CandidateEvent] = []
@@ -173,7 +181,7 @@ def detect_ripple_events(
     start_event = 0
     peak_power = -np.inf
 
-    for idx, value in enumerate(channel):
+    for idx, value in enumerate(ripple_band):
 
         if value > lower_threshold and not in_event:
             start_event = idx
@@ -193,22 +201,34 @@ def detect_ripple_events(
         if value < lower_threshold and in_event and upper_exceeded:
             in_event = False
             upper_exceeded = False
+
+            instantaneous_phase = np.unwrap(np.angle(ripple_band[start_event:idx]))
+            instantaneous_frequency = np.mean((np.diff(instantaneous_phase) /
+            (2.0*np.pi) * sampling_rate))
+
             candidate_events.append(
                 CandidateEvent(
                     onset=start_event,
                     offset=idx,
                     peak_power=peak_power,
                     peak_idx=peak_idx,
+                    detection_channel= CA1_channels[channel],
+                    frequency=instantaneous_frequency,
                 )
             )
             peak_power = -np.inf
+            instantaneous_frequency = -np.inf
+
 
     return candidate_events
 
 
 def get_candidate_ripples(
-    lfp: np.ndarray, sampling_rate: int
+    lfp: np.ndarray, CA1_channels: List[int], sampling_rate: int,
 ) -> List[List[CandidateEvent]]:
     """Gets candidate ripples from a common average referenced LFP"""
-    ripple_band = compute_envelope(bandpass_filter(lfp, 125, 250, sampling_rate))
-    return [detect_ripple_events(channel) for channel in ripple_band]
+    channel_idx=[0,1,2,3,4]
+    lfp=lfp
+    CA1_channels=CA1_channels
+    sampling_rate=sampling_rate
+    return [detect_ripple_events(channel, lfp, CA1_channels, sampling_rate) for channel in channel_idx]

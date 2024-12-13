@@ -134,7 +134,7 @@ def lfp_clear_internal_reference_channel(lfp: np.ndarray) -> np.ndarray:
     return lfp
 
 
-def lfp_get_noise_levels(lfp):
+def lfp_get_noise_levels(lfp: np.ndarray)-> np.ndarray:
     rms_per_channel = np.sqrt(np.nanmean(lfp**2, axis=1))
     rms_per_channel = rms_per_channel.tolist()
     return rms_per_channel
@@ -345,18 +345,32 @@ def cache_session(metadata_probe: pd.Series) -> None:
     )
     max_powerChanCA1 = np.argmax(swr_power[all_CA1_channels])
     CA1_channels = all_CA1_channels[max_powerChanCA1 - 2 : max_powerChanCA1 + 3]
+    CA1_channels_swr_pow = swr_power[CA1_channels]
+    CA1_channels_swr_pow = CA1_channels_swr_pow.tolist()
 
-    assert 191 not in CA1_channels, "Reference channel should not be included in CA1 channels" 
+    print(f"CA1_channels: {CA1_channels} , power: {CA1_channels_swr_pow}")
 
+    if 191 in CA1_channels:
+        CA1_channels.remove(191)
+        lower_channel = all_CA1_channels[max_powerChanCA1 - 3]
+        higher_channel = all_CA1_channels[max_powerChanCA1 + 4]
+        if swr_power[lower_channel] > swr_power[higher_channel]:
+            CA1_channels.append(lower_channel)
+        else:
+            CA1_channels.append(higher_channel)
 
     # CAR ToDo: test if we want to have it in here (take mean across channels and then subtract from each channel)
+    lfp_all_CA1 = lfp[all_CA1_channels, :]
     lfp_CA1 = lfp[CA1_channels, :]
-    common_average = np.nanmedian(lfp_CA1, axis=0)
+    common_average = np.nanmean(lfp_all_CA1, axis=0)
     lfp_CA1_CAR = np.subtract(lfp_CA1, common_average)
 
     candidate_events = get_candidate_ripples(
-        lfp_CA1_CAR, sampling_rate=SAMPLING_RATE_LFP
+        lfp_CA1_CAR, CA1_channels, sampling_rate=SAMPLING_RATE_LFP,
     )
+
+    a = [event for events in candidate_events for event in events]
+    print(f"Number of ripples before filtering: {len(a)}")
 
     ripples_channels = filter_candidate_ripples(
         candidate_events, lfp_CA1_CAR, common_average, SAMPLING_RATE_LFP
@@ -364,6 +378,9 @@ def cache_session(metadata_probe: pd.Series) -> None:
 
     # Flattening makes further processing easier but loses the channel information
     ripples = [event for events in ripples_channels for event in events]
+
+    print(f"Number of ripples after filtering: {len(ripples)}")
+
     ripples = remove_duplicate_ripples(ripples, 0.3, SAMPLING_RATE_LFP)
 
     num_resting_and_running = len(ripples)
@@ -371,15 +388,19 @@ def cache_session(metadata_probe: pd.Series) -> None:
     threshold = 1  # Check if this is correct
     ripples = get_resting_ripples(ripples, rotary_encoder, threshold, SAMPLING_RATE_LFP)
     num_resting = len(ripples)
+
     print(f"Number of ripples after running removal: {num_resting}")
 
     padding = 2
     n_bins = 200
 
-    ripples_summary: Dict[str, Any] = {
-        "resting_percentage": rotary_encoder_percentage_resting(
+    [resting_percentage,resting_time] = rotary_encoder_percentage_resting(
             rotary_encoder, threshold, lfp.shape[1] / SAMPLING_RATE_LFP
-        ),
+        )
+
+    ripples_summary: Dict[str, Any] = {
+        "resting_time": resting_time,
+        "resting_percentage": resting_percentage,
         "events": ripples,
     }
 
@@ -425,6 +446,8 @@ def cache_session(metadata_probe: pd.Series) -> None:
         id=metadata_probe["Session"],
         length_seconds=lfp.shape[1] / SAMPLING_RATE_LFP,
         rms_per_channel=rms_per_channel,
+        CA1_channels_analysed=CA1_channels,
+        CA1_channels_swr_pow=CA1_channels_swr_pow,
     )
 
     with open(
