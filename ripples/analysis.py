@@ -127,6 +127,7 @@ def load_lfp(lfp_path: Path) -> Tuple[np.ndarray, np.ndarray]:
     # return np.flip(lfp, axis=0)
     return (lfp, sync)
 
+
 def lfp_clear_internal_reference_channel(lfp: np.ndarray) -> np.ndarray:
     int_ref_channel = 191
     lfp = lfp.astype(float)
@@ -134,7 +135,7 @@ def lfp_clear_internal_reference_channel(lfp: np.ndarray) -> np.ndarray:
     return lfp
 
 
-def lfp_get_noise_levels(lfp):
+def lfp_get_noise_levels(lfp: np.ndarray) -> np.ndarray:
     rms_per_channel = np.sqrt(np.nanmean(lfp**2, axis=1))
     rms_per_channel = rms_per_channel.tolist()
     return rms_per_channel
@@ -346,8 +347,9 @@ def cache_session(metadata_probe: pd.Series) -> None:
     max_powerChanCA1 = np.argmax(swr_power[all_CA1_channels])
     CA1_channels = all_CA1_channels[max_powerChanCA1 - 2 : max_powerChanCA1 + 3]
 
-    assert 191 not in CA1_channels, "Reference channel should not be included in CA1 channels" 
-
+    assert (
+        191 not in CA1_channels
+    ), "Reference channel should not be included in CA1 channels"
 
     # CAR ToDo: test if we want to have it in here (take mean across channels and then subtract from each channel)
     lfp_CA1 = lfp[CA1_channels, :]
