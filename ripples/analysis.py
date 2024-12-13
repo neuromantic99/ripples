@@ -1,5 +1,6 @@
 import importlib
 import json
+import os
 from pathlib import Path
 import sys
 from typing import Any, Dict, List, Tuple
@@ -33,6 +34,8 @@ from ripples.ripple_detection import (
 )
 
 from ripples.utils import (
+    bandpass_filter,
+    compute_power,
     degrees_to_cm,
     interleave_arrays,
     smallest_positive_index,
@@ -42,7 +45,7 @@ from ripples.utils_npyx import load_lfp_npyx
 
 REFERENCE_CHANNEL = 191  # For the long linear, change depending on probe
 
-UMBRELLA = Path("/Volumes/MarcBusche/Jana/Neuropixels")
+UMBRELLA = Path("//128.40.224.64/marcbusche/Jana/Neuropixels")
 
 
 def preprocess(lfp: np.ndarray) -> np.ndarray:
@@ -61,7 +64,7 @@ def map_channels_to_regions(coordinates: ProbeCoordinate, n_channels: int) -> Li
     # Clone this: github.com/neuromantic99/neuropixels_trajectory_explorer
     # Add npy matlab to the same folder (github.com/kwikteam/npy-matlab)
     # Set the local path to the repo here:
-    path_to_npte = Path("/Users/jamesrowland/Code/neuropixels_trajectory_explorer/")
+    path_to_npte = Path("C:/Python_code/neuropixels_trajectory_explorer")
 
     eng = matlab.engine.start_matlab()
     eng.cd(str(path_to_npte), nargout=0)
@@ -120,10 +123,22 @@ def load_lfp(lfp_path: Path) -> Tuple[np.ndarray, np.ndarray]:
 
     # The long linear channels are interleaved (confirmed by plotting)
     lfp = np.concatenate((lfp[0::2, :], lfp[1::2, :]), axis=0)
-    lfp[191, :] = 0
     # TODO: PRETTY SURE THIS FLIP SHOULD NOT BE HERE BUT AHHHHHHHHHHHHH
     # return np.flip(lfp, axis=0)
     return (lfp, sync)
+
+
+def lfp_clear_internal_reference_channel(lfp: np.ndarray) -> np.ndarray:
+    int_ref_channel = 191
+    lfp = lfp.astype(float)
+    lfp[int_ref_channel, :] = np.nan
+    return lfp
+
+
+def lfp_get_noise_levels(lfp: np.ndarray) -> np.ndarray:
+    rms_per_channel = np.sqrt(np.nanmean(lfp**2, axis=1))
+    rms_per_channel = rms_per_channel.tolist()
+    return rms_per_channel
 
 
 def check_channel_order(clusters_info: List[ClusterInfo]) -> None:
@@ -292,7 +307,8 @@ def cache_session(metadata_probe: pd.Series) -> None:
 
     lfp, sync = load_lfp(Path(metadata_probe["LFP path"]))
 
-    # TODO: common average referencing
+    lfp = lfp_clear_internal_reference_channel(lfp)
+    rms_per_channel = lfp_get_noise_levels(lfp)
 
     n_channels = lfp.shape[0]
     region_channel = map_channels_to_regions(coordinates, n_channels)
@@ -303,8 +319,13 @@ def cache_session(metadata_probe: pd.Series) -> None:
         Path(metadata_probe["Rotary encoder path"]), sync
     )
 
+    data_path_channel_regions = HERE.parent / "results" / "channel_regions"
+
+    if not data_path_channel_regions.exists():
+        os.makedirs(data_path_channel_regions)
+
     with open(
-        f"/Users/jamesrowland/Code/ripples/results/channel_regions/{recording_id}.csv",
+        data_path_channel_regions / f"{recording_id}.csv",
         "w",
     ) as f:
         write = csv.writer(f)
@@ -313,22 +334,34 @@ def cache_session(metadata_probe: pd.Series) -> None:
     plot_lfp_spectrogram(lfp, recording_id)
     plot_channel_depth_profile(lfp, region_channel, clusters_info, recording_id)
 
-    # TODO: Take the 5 channels with the maximum SWR power to compute ripples in
-
-    CA1_channels = [
+    all_CA1_channels = [
         idx
         for idx, region in enumerate(region_channel)
         if region is not None and "CA1" in region
     ]
 
+    # Find CA1 channel with highest Ripple power and +/- to channel to detect ripples, then do CAR
+    swr_power = compute_power(
+        bandpass_filter(lfp, 125, 250, SAMPLING_RATE_LFP, order=4)
+    )
+    max_powerChanCA1 = np.argmax(swr_power[all_CA1_channels])
+    CA1_channels = all_CA1_channels[max_powerChanCA1 - 2 : max_powerChanCA1 + 3]
+
+    assert (
+        191 not in CA1_channels
+    ), "Reference channel should not be included in CA1 channels"
+
+    # CAR ToDo: test if we want to have it in here (take mean across channels and then subtract from each channel)
+    lfp_CA1 = lfp[CA1_channels, :]
+    common_average = np.nanmedian(lfp_CA1, axis=0)
+    lfp_CA1_CAR = np.subtract(lfp_CA1, common_average)
+
     candidate_events = get_candidate_ripples(
-        lfp[CA1_channels, :], sampling_rate=SAMPLING_RATE_LFP
+        lfp_CA1_CAR, sampling_rate=SAMPLING_RATE_LFP
     )
 
-    common_average = np.mean(lfp[CA1_channels, :], axis=0)
-
     ripples_channels = filter_candidate_ripples(
-        candidate_events, lfp[CA1_channels, :], common_average, SAMPLING_RATE_LFP
+        candidate_events, lfp_CA1_CAR, common_average, SAMPLING_RATE_LFP
     )
 
     # Flattening makes further processing easier but loses the channel information
@@ -393,6 +426,7 @@ def cache_session(metadata_probe: pd.Series) -> None:
         clusters_info=clusters_info,
         id=metadata_probe["Session"],
         length_seconds=lfp.shape[1] / SAMPLING_RATE_LFP,
+        rms_per_channel=rms_per_channel,
     )
 
     with open(
@@ -414,7 +448,7 @@ def load_channel_regions(metadata_probe: pd.Series) -> List[str]:
 
 def main() -> None:
 
-    reprocess = True
+    reprocess = False
     metadata = gsheet2df("1HSERPbm-kDhe6X8bgflxvTuK24AfdrZJzbdBy11Hpcg", "sessions", 1)
 
     # metadata = metadata[metadata["CA1 detected"] == "TRUE"]

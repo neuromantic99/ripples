@@ -1,6 +1,7 @@
 {
     "version": "0.2.0",
     "configurations": [
+      
       {
         "name": "run analysis.py",
         "type": "debugpy",
@@ -15,7 +16,7 @@
         "request": "launch",
         "purpose": ["debug-test"],
         "justMyCode": true,
-    }
+      }
     ]
   }
   

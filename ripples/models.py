@@ -48,6 +48,7 @@ class Session(BaseModel):
     clusters_info: List[ClusterInfo]
     id: str
     length_seconds: float
+    rms_per_channel: List[float]
 
 
 class ProbeCoordinate(BaseModel):
