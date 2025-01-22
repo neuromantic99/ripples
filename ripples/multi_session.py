@@ -13,7 +13,7 @@ from ripples.utils import mean_across_same_session
 sns.set_theme(context="talk", style="ticks")
 
 
-RESULTS_PATH = HERE.parent / "results"
+RESULTS_PATH = HERE.parent / "results" / "test_cohort_less_restrictive"
 
 
 def number_of_spikes_per_cell_per_ripple(session: Session) -> float:
@@ -204,6 +204,68 @@ def ripple_power_plot(WTs: List[Session], NLGFs: List[Session]) -> None:
     plt.savefig(HERE.parent / "figures" / "resting_ripple_power.png")
 
 
+def ripple_freq_plot(WTs: List[Session], NLGFs: List[Session]) -> None:
+
+    wt_data = mean_across_same_session(
+        [
+            SessionToAverage(
+                remove_month_from_session_id(session.id),
+                np.mean(session.ripples_summary.ripple_frequency).astype(float),
+            )
+            for session in WTs
+        ]
+    )
+
+    nlgf_data = mean_across_same_session(
+        [
+            SessionToAverage(
+                remove_month_from_session_id(session.id),
+                np.mean(session.ripples_summary.ripple_frequency).astype(float),
+            )
+            for session in NLGFs
+        ]
+    )
+
+    plt.figure()
+    sns.stripplot({"WTs": wt_data, "NLGFs": nlgf_data})
+    sns.boxplot({"WTs": wt_data, "NLGFs": nlgf_data}, showfliers=False)
+    plt.ylim(0, 250)
+    plt.ylabel(r"Ripple frequency ( $\mu$V)")
+    plt.tight_layout()
+    plt.savefig(HERE.parent / "figures" / "resting_ripple_frequency.png")
+
+
+def ripple_bandpower_plot(WTs: List[Session], NLGFs: List[Session]) -> None:
+
+    wt_data = mean_across_same_session(
+        [
+            SessionToAverage(
+                remove_month_from_session_id(session.id),
+                np.mean(session.ripples_summary.ripple_bandpower).astype(float),
+            )
+            for session in WTs
+        ]
+    )
+
+    nlgf_data = mean_across_same_session(
+        [
+            SessionToAverage(
+                remove_month_from_session_id(session.id),
+                np.mean(session.ripples_summary.ripple_bandpower).astype(float),
+            )
+            for session in NLGFs
+        ]
+    )
+
+    plt.figure()
+    sns.stripplot({"WTs": wt_data, "NLGFs": nlgf_data})
+    sns.boxplot({"WTs": wt_data, "NLGFs": nlgf_data}, showfliers=False)
+    plt.ylim(0, 250)
+    plt.ylabel(r"Ripple bandpower ( $\mu$V)")
+    plt.tight_layout()
+    plt.savefig(HERE.parent / "figures" / "resting_ripple_bandpower.png")
+
+
 def smooth_ripple_triggered_average(
     stacked_trials: np.ndarray, bin_sum: int
 ) -> np.ndarray:
@@ -327,7 +389,12 @@ def load_sessions() -> Tuple[List[Session], List[Session]]:
 
     for file in results_files:
 
-        if "3M" not in file.name and "4M" not in file.name:
+        if (
+            "3M" not in file.name
+            and "4M" not in file.name
+            and "5M" not in file.name
+            and "A" not in file.name
+        ):
             continue
 
         with open(file) as f:
@@ -348,11 +415,13 @@ def main() -> None:
     WTs, NLGFs = load_sessions()
 
     spikes_per_ripple(WTs, NLGFs)
-    # number_of_ripples_plot(WTs, NLGFs)
+    number_of_ripples_plot(WTs, NLGFs)
 
-    # ripple_power_plot(WTs, NLGFs)
-    # plot_grand_ripple_triggered_average(WTs, NLGFs)
-    # time_spent_resting_plot(WTs, NLGFs)
-    # # resting_time_ripple_rate_correlation(WTs, NLGFs)
+    ripple_power_plot(WTs, NLGFs)
+    ripple_freq_plot(WTs, NLGFs)
+    ripple_bandpower_plot(WTs, NLGFs)
+    plot_grand_ripple_triggered_average(WTs, NLGFs)
+    time_spent_resting_plot(WTs, NLGFs)
+    resting_time_ripple_rate_correlation(WTs, NLGFs)
 
     plt.show()

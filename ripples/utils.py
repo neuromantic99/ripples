@@ -2,7 +2,7 @@ from collections import defaultdict
 from typing import List, TypeVar
 
 import numpy as np
-from scipy import signal
+from scipy import signal, trapz
 
 from ripples.models import SessionToAverage
 
@@ -12,6 +12,14 @@ def bandpass_filter(
 ) -> np.ndarray:
     b, a = signal.butter(order, Wn=[low, high], fs=sampling_rate, btype="bandpass")
     return signal.filtfilt(b, a, lfp, axis=1)
+
+
+# adapted from stackoverflow, similar to bandpower function in Matlab
+def bandpower(lfp: np.ndarray, sampling_rate: int, fmin: int, fmax: int) -> float:
+    f, Pxx = signal.periodogram(lfp, fs=sampling_rate)
+    ind_min = np.argmax(f > fmin) - 1
+    ind_max = np.argmax(f > fmax) - 1
+    return trapz(Pxx[ind_min:ind_max], f[ind_min:ind_max])
 
 
 def compute_envelope(lfp: np.ndarray) -> np.ndarray:

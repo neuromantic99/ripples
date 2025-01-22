@@ -27,8 +27,8 @@ class CandidateEvent(BaseModel):
     peak_power: int | float
     peak_idx: int
     frequency: float
+    bandpower_ripple: float
     detection_channel: int
-
 
 
 class RipplesSummary(BaseModel):
@@ -36,6 +36,8 @@ class RipplesSummary(BaseModel):
     dentate: List[List[int]]
     ca1: List[List[int]]
     ripple_power: List[float]
+    ripple_frequency: List[float]
+    ripple_bandpower: List[float]
     resting_percentage: float
     resting_time: float
     events: List[CandidateEvent]
