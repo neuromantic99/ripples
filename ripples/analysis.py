@@ -361,8 +361,7 @@ def cache_session(metadata_probe: pd.Series) -> None:
         else:
             CA1_channels.append(higher_channel)
 
-    CA1_channels_swr_pow = swr_power[CA1_channels]
-    CA1_channels_swr_pow = CA1_channels_swr_pow.tolist()
+    CA1_channels_swr_pow = list(swr_power[CA1_channels])
     print(f"CA1_channels: {CA1_channels} , power: {CA1_channels_swr_pow}")
 
     # CAR ToDo: test if we want to have it in here (take mean across channels and then subtract from each channel)
