@@ -263,9 +263,6 @@ def get_candidate_ripples(
 ) -> List[List[CandidateEvent]]:
     """Gets candidate ripples from a common average referenced LFP"""
     channel_idx = list(range(0, len(CA1_channels)))
-    lfp = lfp
-    CA1_channels = CA1_channels
-    sampling_rate = sampling_rate
     return [
         detect_ripple_events(channel, lfp, CA1_channels, sampling_rate)
         for channel in channel_idx
