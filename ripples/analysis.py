@@ -402,7 +402,7 @@ def cache_session(metadata_probe: pd.Series) -> None:
     padding = 2
     n_bins = 200
 
-    [resting_percentage, resting_time] = rotary_encoder_percentage_resting(
+    resting_percentage, resting_time = rotary_encoder_percentage_resting(
         rotary_encoder, threshold, lfp.shape[1] / SAMPLING_RATE_LFP
     )
 
