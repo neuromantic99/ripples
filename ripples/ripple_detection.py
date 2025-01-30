@@ -137,7 +137,7 @@ def average_ripple_speed(
 
 def rotary_encoder_percentage_resting(
     rotary_encoder: RotaryEncoder, threshold: float, max_time: float, plot: bool = False
-) -> List[float | int]:
+) -> Tuple[float, float]:
     """Checked with plotting but writ tests"""
 
     bin_size = 1
