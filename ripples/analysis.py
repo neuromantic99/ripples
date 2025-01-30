@@ -489,7 +489,7 @@ def main() -> None:
 
     metadata = metadata[metadata["test_cohort"] == "TRUE"]
     metadata = metadata[metadata["Ignore"] == "FALSE"]
-    metadata = metadata[metadata["Perfect_Peak"] == "Definetly"]
+    metadata = metadata[metadata["Perfect_Peak"] == "Definitely"]
 
     sessions_keep = []
     for session in metadata["Session"].to_list():
