@@ -162,7 +162,7 @@ def rotary_encoder_percentage_resting(
         ax1.plot(bin_edges[:-1], speed, color="red")
         ax2.plot(rotary_encoder.time, rotary_encoder.position)
 
-    return [resting_percentage, resting_time]
+    return resting_percentage, resting_time
 
 
 def get_resting_ripples(
