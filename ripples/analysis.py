@@ -376,8 +376,7 @@ def cache_session(metadata_probe: pd.Series) -> None:
         sampling_rate=SAMPLING_RATE_LFP,
     )
 
-    a = [event for events in candidate_events for event in events]
-    print(f"Number of ripples before filtering: {len(a)}")
+    print(f"Number of ripples before filtering: {len([event for events in candidate_events for event in events])}")
 
     ripples_channels = filter_candidate_ripples(
         candidate_events, lfp_CA1_CAR, common_average, SAMPLING_RATE_LFP
