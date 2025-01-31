@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Tuple
 from matplotlib import pyplot as plt
 import numpy as np
 from scipy import signal
@@ -44,35 +44,35 @@ def filter_candidate_ripples(
     )
 
     candidate_events = [length_check(events) for events in candidate_events]
-
-    ripples = [event for events in candidate_events for event in events]
-    print(f"Number of ripples after length check: {len(ripples)}")
+    print(
+        f"Number of ripples after length check: {len([event for events in candidate_events for event in events])}"
+    )
 
     candidate_events = [frequency_check(events) for events in candidate_events]
+    print(
+        f"Number of ripples after frequency check: {len([event for events in candidate_events for event in events])}"
+    )
 
-    ripples1 = [event for events in candidate_events for event in events]
-    print(f"Number of ripples after frequency check: {len(ripples1)}")
+    common_average_power = compute_envelope(
+        bandpass_filter(np.expand_dims(common_average, axis=0), 80, 250, sampling_rate)
+    )
 
-    # common_average_power = compute_envelope(
-    #     bandpass_filter(np.expand_dims(common_average, axis=0), 80, 250, sampling_rate)
-    # )
+    candidate_events = [
+        event_power_check(events, common_average_power.squeeze())
+        for events in candidate_events
+    ]
+    print(
+        f"Number of ripples after CAR check: {len([event for events in candidate_events for event in events])}"
+    )
 
-    # candidate_events = [
-    #     event_power_check(events, common_average_power.squeeze())
-    #     for events in candidate_events
-    # ]
+    supra_ripple_band_power = compute_envelope(
+        bandpass_filter(lfp, 200, 500, sampling_rate)
+    )
 
-    # ripples2 = [event for events in candidate_events for event in events]
-    # print(f"Number of ripples after CAR check: {len(ripples2)}")
-
-    # supra_ripple_band_power = compute_envelope(
-    #     bandpass_filter(lfp, 200, 500, sampling_rate)
-    # )
-
-    #     event_power_check(events, supra)
-    # for events, supra in zip(candidate_events, supra_ripple_band_power)
-
-    return candidate_events
+    return [
+        event_power_check(events, supra)
+        for events, supra in zip(candidate_events, supra_ripple_band_power)
+    ]
 
 
 def count_spikes_around_ripple(
@@ -94,6 +94,7 @@ def count_spikes_around_ripple(
 
     counts, _ = np.histogram(spike_times, bins=num_bins)
     return list(counts.astype(float))
+
 
 def remove_duplicate_ripples(
     ripples: List[CandidateEvent], min_distance_seconds: float, sampling_rate_lfp: int
@@ -226,14 +227,13 @@ def detect_ripple_events(
         if value < lower_threshold and in_event and upper_exceeded:
             in_event = False
             upper_exceeded = False
-         
-            [f, Pxx] = signal.periodogram(lfp[0, start_event:idx], fs=sampling_rate)
-            Max = np.argmax(Pxx.reshape(len(f), 1).tolist())
-            Max_freq = f[Max]
-            Max_val = (Pxx.reshape(len(f), 1)).tolist()[Max]
-            Max_val = Max_val[0]
 
-        
+            [f, Pxx] = signal.periodogram(lfp[0, start_event:idx], fs=sampling_rate)
+            max_idx = np.argmax(Pxx.reshape(len(f), 1).tolist())
+            max_freq = f[max_idx]
+            max_val = (Pxx.reshape(len(f), 1)).tolist()[max_idx]
+            max_val = max_val[0]
+
             bandpower_ripple = bandpower(
                 lfp[0, start_event:idx], sampling_rate, 80, 250
             )
@@ -245,12 +245,12 @@ def detect_ripple_events(
                     peak_power=peak_power,
                     peak_idx=peak_idx,
                     detection_channel=CA1_channels[channel],
-                    frequency=Max_freq,
+                    frequency=max_freq,
                     bandpower_ripple=bandpower_ripple,
                 )
             )
             peak_power = -np.inf
-            Max_freq = -np.inf
+            max_freq = -np.inf
             bandpower_ripple = -np.inf
 
     return candidate_events

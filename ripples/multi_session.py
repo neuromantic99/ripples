@@ -173,6 +173,9 @@ def number_of_ripples_plot(WTs: List[Session], NLGFs: List[Session]) -> None:
     plt.savefig(HERE.parent / "figures" / "resting_ripple_rate.png")
 
 
+# TODO: add in statistics
+
+
 def ripple_power_plot(WTs: List[Session], NLGFs: List[Session]) -> None:
 
     wt_data = mean_across_same_session(

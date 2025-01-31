@@ -345,13 +345,18 @@ def cache_session(metadata_probe: pd.Series) -> None:
         if region is not None and "CA1" in region
     ]
 
-    # Find CA1 channel with highest Ripple power and +/- to channel to detect ripples, then do CAR
+    # make sure there are at least 10 CA1 channel to be sure that the rest of the code works
+    assert len(all_CA1_channels) > 10
+
+    # Find CA1 channel with highest Ripple power and +/- two channels to detect ripples, then do CAR
     swr_power = compute_power(
         bandpass_filter(lfp, 125, 250, SAMPLING_RATE_LFP, order=4)
     )
     max_powerChanCA1 = np.argmax(swr_power[all_CA1_channels])
+
     CA1_channels = all_CA1_channels[max_powerChanCA1 - 2 : max_powerChanCA1 + 3]
 
+    # If the reference channel is part of the selected channels for ripple analysis replace with neighbouring channel with the higher ripple power
     if 191 in CA1_channels:
         CA1_channels.remove(191)
         lower_channel = all_CA1_channels[max_powerChanCA1 - 3]
@@ -376,7 +381,9 @@ def cache_session(metadata_probe: pd.Series) -> None:
         sampling_rate=SAMPLING_RATE_LFP,
     )
 
-    print(f"Number of ripples before filtering: {len([event for events in candidate_events for event in events])}")
+    print(
+        f"Number of ripples before filtering: {len([event for events in candidate_events for event in events])}"
+    )
 
     ripples_channels = filter_candidate_ripples(
         candidate_events, lfp_CA1_CAR, common_average, SAMPLING_RATE_LFP
