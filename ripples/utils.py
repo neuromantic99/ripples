@@ -3,6 +3,7 @@ from typing import List, TypeVar
 
 import numpy as np
 from scipy import signal, trapz
+from matplotlib import pyplot as plt
 
 from ripples.models import SessionToAverage
 
@@ -14,12 +15,29 @@ def bandpass_filter(
     return signal.filtfilt(b, a, lfp, axis=1)
 
 
-# adapted from stackoverflow, similar to bandpower function in Matlab
+# adapted from https://www.askpython.com/python-modules/pandas/comparing-bandpower-matlab-python-numpy
+# still needs adjustments
 def bandpower(lfp: np.ndarray, sampling_rate: int, fmin: int, fmax: int) -> float:
-    f, Pxx = signal.periodogram(lfp, fs=sampling_rate)
-    ind_min = np.argmax(f > fmin) - 1
-    ind_max = np.argmax(f > fmax) - 1
-    return trapz(Pxx[ind_min:ind_max], f[ind_min:ind_max])
+    freqrange = [fmin, fmax] 
+    frequencies, psd = signal.welch(lfp, sampling_rate,nperseg=1024) 
+    freq_indices = np.where((frequencies >= freqrange[0]) & (frequencies <= freqrange[1]))
+    p = np.trapz(psd[freq_indices], frequencies[freq_indices])
+    return p
+    #print(f'Bandpower in the range {freqrange[0]}-{freqrange[1]} Hz: {p}')
+
+
+def get_event_frequency(lfp: np.ndarray, sampling_rate: int, plot=False) -> float:
+    [f, Pxx] = signal.periodogram(lfp, fs=sampling_rate)
+    max_idx = np.argmax(Pxx.reshape(len(f), 1).tolist())
+    max_freq = f[max_idx]
+    if plot==True:
+        max_val = (Pxx.reshape(len(f), 1)).tolist()[max_idx]
+        max_val = max_val[0]
+        plt.figure()
+        plt.plot(f, Pxx.reshape(len(f), 1))
+        plt.plot(max_freq, max_val, "ro")
+        plt.show()
+    return max_freq
 
 
 def compute_envelope(lfp: np.ndarray) -> np.ndarray:

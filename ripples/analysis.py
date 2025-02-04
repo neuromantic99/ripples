@@ -135,7 +135,7 @@ def lfp_clear_internal_reference_channel(lfp: np.ndarray) -> np.ndarray:
     return lfp
 
 
-def lfp_get_noise_levels(lfp: np.ndarray) -> np.ndarray:
+def lfp_get_noise_levels(lfp: np.ndarray) -> List[float]:
     rms_per_channel = np.sqrt(np.nanmean(lfp**2, axis=1))
     rms_per_channel = rms_per_channel.tolist()
     return rms_per_channel
@@ -409,8 +409,8 @@ def cache_session(metadata_probe: pd.Series) -> None:
     padding = 2
     n_bins = 200
 
-    resting_percentage, resting_time = rotary_encoder_percentage_resting(
-        rotary_encoder, threshold, lfp.shape[1] / SAMPLING_RATE_LFP
+    resting_percentage, resting_time, speed = rotary_encoder_percentage_resting(
+        rotary_encoder, threshold, lfp.shape[1] / SAMPLING_RATE_LFP, ripples
     )
 
     ripples_summary: Dict[str, Any] = {

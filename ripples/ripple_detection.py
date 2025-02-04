@@ -9,6 +9,7 @@ from ripples.utils import (
     compute_envelope,
     smallest_positive_index,
     bandpower,
+    get_event_frequency,
 )
 
 
@@ -137,8 +138,8 @@ def average_ripple_speed(
 
 
 def rotary_encoder_percentage_resting(
-    rotary_encoder: RotaryEncoder, threshold: float, max_time: float, plot: bool = False
-) -> Tuple[float, float]:
+    rotary_encoder: RotaryEncoder, threshold: float, max_time: float, ripples: List[CandidateEvent], plot: bool = True
+) -> Tuple[float, float, List]:
     """Checked with plotting but writ tests"""
 
     bin_size = 1
@@ -161,9 +162,15 @@ def rotary_encoder_percentage_resting(
         _, ax1 = plt.subplots()
         ax2 = ax1.twinx()
         ax1.plot(bin_edges[:-1], speed, color="red")
-        ax2.plot(rotary_encoder.time, rotary_encoder.position)
+        onset_times=[ripple.onset for ripple in ripples]
+        onset_times_in_sec = [x/2500 for x in onset_times] 
+        y_vec= np.ones(len(ripples))
+        ax2.scatter(onset_times_in_sec, y_vec)
+        plt.show()
+    
+    print('Done')
 
-    return resting_percentage, resting_time
+    return resting_percentage, resting_time, speed
 
 
 def get_resting_ripples(
@@ -227,13 +234,10 @@ def detect_ripple_events(
         if value < lower_threshold and in_event and upper_exceeded:
             in_event = False
             upper_exceeded = False
-
-            [f, Pxx] = signal.periodogram(lfp[0, start_event:idx], fs=sampling_rate)
-            max_idx = np.argmax(Pxx.reshape(len(f), 1).tolist())
-            max_freq = f[max_idx]
-            max_val = (Pxx.reshape(len(f), 1)).tolist()[max_idx]
-            max_val = max_val[0]
-
+            
+            data= lfp[0, start_event:idx]
+            max_freq=get_event_frequency(data, sampling_rate)
+            
             bandpower_ripple = bandpower(
                 lfp[0, start_event:idx], sampling_rate, 80, 250
             )

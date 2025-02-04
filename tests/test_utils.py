@@ -1,6 +1,13 @@
 import numpy as np
 
-from ripples.utils import bandpass_filter, forward_fill, mean_across_same_session
+from ripples.utils import bandpass_filter, forward_fill, mean_across_same_session, get_event_frequency
+
+def test_get_event_frequency()-> None:
+    t = np.arange(0, 1, 1/1000)
+    test_data=np.sin(2 * np.pi * 50 * t) + 0.5 * np.sin(2 * np.pi * 120 * t) + 0.5 * np.sin(2 * np.pi * 160 * t)
+    f=get_event_frequency(test_data, 1000)
+    expected_f=50
+    assert f == expected_f
 
 
 def test_butterworth() -> None:
