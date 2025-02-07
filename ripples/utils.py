@@ -18,19 +18,32 @@ def bandpass_filter(
 # adapted from https://www.askpython.com/python-modules/pandas/comparing-bandpower-matlab-python-numpy
 # still needs adjustments
 def bandpower(lfp: np.ndarray, sampling_rate: int, fmin: int, fmax: int) -> float:
-    freqrange = [fmin, fmax] 
-    frequencies, psd = signal.welch(lfp, sampling_rate,nperseg=1024) 
-    freq_indices = np.where((frequencies >= freqrange[0]) & (frequencies <= freqrange[1]))
-    p = np.trapz(psd[freq_indices], frequencies[freq_indices])
-    return p
-    #print(f'Bandpower in the range {freqrange[0]}-{freqrange[1]} Hz: {p}')
+    freqrange = [fmin, fmax]
+    frequencies, psd = signal.welch(
+        lfp, sampling_rate, nperseg=sampling_rate, scaling="density"
+    )
+    freq_indices = np.where(
+        (frequencies >= freqrange[0]) & (frequencies <= freqrange[1])
+    )
+    band_power = np.trapz(
+        psd.reshape(np.size(psd))[freq_indices], frequencies[freq_indices]
+    )
+    return band_power
+
+
+# import scipy
+# def bandpower(x, fs, fmin, fmax):
+#     f, Pxx = scipy.signal.periodogram(x, fs=fs)
+#     ind_min = scipy.argmax(f > fmin) - 1
+#     ind_max = scipy.argmax(f > fmax) - 1
+#     return scipy.trapz(Pxx[ind_min: ind_max], f[ind_min: ind_max])
 
 
 def get_event_frequency(lfp: np.ndarray, sampling_rate: int, plot=False) -> float:
     [f, Pxx] = signal.periodogram(lfp, fs=sampling_rate)
     max_idx = np.argmax(Pxx.reshape(len(f), 1).tolist())
     max_freq = f[max_idx]
-    if plot==True:
+    if plot == True:
         max_val = (Pxx.reshape(len(f), 1)).tolist()[max_idx]
         max_val = max_val[0]
         plt.figure()

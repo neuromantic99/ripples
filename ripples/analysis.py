@@ -125,7 +125,14 @@ def load_lfp(lfp_path: Path) -> Tuple[np.ndarray, np.ndarray]:
     lfp = np.concatenate((lfp[0::2, :], lfp[1::2, :]), axis=0)
     # TODO: PRETTY SURE THIS FLIP SHOULD NOT BE HERE BUT AHHHHHHHHHHHHH
     # return np.flip(lfp, axis=0)
-    return (lfp, sync)
+
+    # Chop off beginning & end of the recording without behavioural data
+    recording_onset = np.where(sync > 0.5)[0][0]
+    # behavioural recording stops at the first rising edge of the 1s 5 Hz pulse, sampling rate 2500 Hz
+    recording_offset = np.where(sync > 0.5)[0][-1250]
+    lfp_chopped = lfp[:, recording_onset:recording_offset]
+
+    return lfp_chopped, sync
 
 
 def lfp_clear_internal_reference_channel(lfp: np.ndarray) -> np.ndarray:
@@ -156,7 +163,13 @@ def check_channel_order(clusters_info: List[ClusterInfo]) -> None:
             prev = None
 
 
-def load_spikes(kilosort_path: Path, region_channel: List[str]) -> List[ClusterInfo]:
+def load_spikes(
+    kilosort_path: Path,
+    region_channel: List[str],
+    sync: np.ndarray,
+    sampling_rate_lfp: float,
+    scatter_plot=False,
+):
 
     # TODO: filter noise clusters, not sure if Jana has vetted these
     # keep_idx = cluster_info[cluster_info["KSLabel"].isin(["good", "mua"])].index
@@ -165,11 +178,57 @@ def load_spikes(kilosort_path: Path, region_channel: List[str]) -> List[ClusterI
     spike_clusters = np.load(UMBRELLA / kilosort_path / "spike_clusters.npy")
     cluster_df = pd.read_csv(UMBRELLA / kilosort_path / "cluster_info.tsv", sep="\t")
 
+    assert len(spike_times) == len(spike_clusters)
+    spike_cluster_list = list(set(spike_clusters))
+    cluster_id_list = list(set(cluster_df["cluster_id"]))
+    assert spike_cluster_list == cluster_id_list
+
     sys.path.append(str(UMBRELLA / kilosort_path))
     params = importlib.import_module("params")
     sys.path.remove(str(UMBRELLA / kilosort_path))
 
-    spike_times = spike_times / params.sample_rate
+    # Chop off beginning & end of the recording without behavioural data
+    recording_onset = (
+        np.where(sync > 0.5)[0][0] / sampling_rate_lfp * params.sample_rate
+    )
+    # behavioural recording stops at the first rising edge of the 1s 5 Hz pulse, sampling rate 2500 Hz
+    recording_offset = (
+        np.where(sync > 0.5)[0][-1250] / sampling_rate_lfp * params.sample_rate
+    )
+    aligned_spike_times_ind = (spike_times > recording_onset) & (
+        spike_times < recording_offset
+    )
+    aligned_spike_times = spike_times[aligned_spike_times_ind]
+    aligned_spike_times = (
+        spike_times[aligned_spike_times_ind] - recording_onset
+    )  # chop off beginning & end, set the time so that it alignes to rotary encoder
+    aligned_spike_times = aligned_spike_times / params.sample_rate
+    aligned_spike_clusters = spike_clusters.reshape(len(spike_clusters), 1)[
+        aligned_spike_times_ind
+    ]
+
+    assert (
+        min(aligned_spike_times) < 1
+    )  # to check if chopping works, assuming that there is at least one spike in the first second of the recording
+    assert len(aligned_spike_times) == len(aligned_spike_clusters)
+
+    if scatter_plot == True:
+        # very slow, need to find a way to improve this if needed
+        spike_depths = [
+            cluster_df["depth"][int(np.where(cluster_df["cluster_id"] == cluster)[0])]
+            for cluster in spike_clusters
+        ]
+        aligned_spike_depths = np.array(spike_depths).reshape(len(spike_depths), 1)[
+            aligned_spike_times_ind
+        ]
+        plt.figure()
+        plt.scatter(aligned_spike_times, aligned_spike_depths)
+        plt.show()
+
+    # bin the data to get an idea of spiking activity over the recording
+    num_bins = int(max(np.round(aligned_spike_times)))
+    # Use numpy's histogram function for equal width bins
+    hist, bins = np.histogram(aligned_spike_times, bins=num_bins)
 
     n_channels = len(region_channel)
     channel_map = np.arange(n_channels)
@@ -177,9 +236,11 @@ def load_spikes(kilosort_path: Path, region_channel: List[str]) -> List[ClusterI
         channel_map[: n_channels // 2], channel_map[n_channels // 2 :]
     )
 
-    return [
+    return hist, [
         ClusterInfo(
-            spike_times=(spike_times[spike_clusters == row["cluster_id"]])
+            spike_times=(
+                aligned_spike_times[aligned_spike_clusters == row["cluster_id"]]
+            )
             .squeeze()
             .tolist(),
             region=region_channel[row["ch"]],
@@ -191,7 +252,7 @@ def load_spikes(kilosort_path: Path, region_channel: List[str]) -> List[ClusterI
         )
         for _, row in cluster_df.iterrows()
         # A single spike doesn't make sense and it ruins the type of the class
-        if len(spike_times[spike_clusters == row["cluster_id"]]) > 1
+        if len(aligned_spike_times[aligned_spike_clusters == row["cluster_id"]]) > 1
     ]
 
 
@@ -242,7 +303,7 @@ def get_distance_matrix(
     return 1 - crosscorr
 
 
-def load_rotary_encoder(rotary_encoder_path: Path, sync: np.ndarray) -> RotaryEncoder:
+def load_rotary_encoder(rotary_encoder_path: Path) -> RotaryEncoder:
     """scipy io loads this in an insane way"""
     rotary_encoder = io.loadmat(UMBRELLA / rotary_encoder_path)["data"][0][0]
     positions = rotary_encoder[1][0]
@@ -252,10 +313,6 @@ def load_rotary_encoder(rotary_encoder_path: Path, sync: np.ndarray) -> RotaryEn
     ), "Something has probably gone wrong with the unwrapping"
 
     time = rotary_encoder[2][0]
-
-    # This is the most obvious way to do this, not sure if there's a better way
-    recording_onset = np.where(sync > 0.5)[0][0]
-    time = time + recording_onset / SAMPLING_RATE_LFP
 
     assert np.all(np.diff(time) >= 0)
     assert positions.shape[0] == time.shape[0]
@@ -312,12 +369,12 @@ def cache_session(metadata_probe: pd.Series) -> None:
 
     n_channels = lfp.shape[0]
     region_channel = map_channels_to_regions(coordinates, n_channels)
-    clusters_info = load_spikes(Path(metadata_probe["Kilosort path"]), region_channel)
+    hist, clusters_info = load_spikes(
+        Path(metadata_probe["Kilosort path"]), region_channel, sync, SAMPLING_RATE_LFP
+    )
     check_channel_order(clusters_info)
 
-    rotary_encoder = load_rotary_encoder(
-        Path(metadata_probe["Rotary encoder path"]), sync
-    )
+    rotary_encoder = load_rotary_encoder(Path(metadata_probe["Rotary encoder path"]))
 
     data_path_channel_regions = (
         HERE.parent

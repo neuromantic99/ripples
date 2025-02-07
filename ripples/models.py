@@ -54,7 +54,7 @@ class Session(BaseModel):
     clusters_info: List[ClusterInfo]
     id: str
     length_seconds: float
-    rms_per_channel:List[float]
+    rms_per_channel: List[float]
     CA1_channels_analysed: List[int]
     CA1_channels_swr_pow: List[float]
 

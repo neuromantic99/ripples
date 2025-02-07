@@ -129,18 +129,30 @@ def average_ripple_speed(
 ) -> float:
     """This assumes the mouse is running in one direction only which is probably not correct"""
 
-    start_time = ripple.onset / sampling_rate_lfp
-    end_time = ripple.offset / sampling_rate_lfp
+    start_time = (ripple.onset / sampling_rate_lfp) - 1
+    end_time = (
+        ripple.offset / sampling_rate_lfp
+    ) + 1  # taking a +/-1 second time window around the Ripple, to make sure it is resting state
     start_idx = smallest_positive_index(start_time - rotary_encoder.time)
     end_idx = smallest_positive_index(end_time - rotary_encoder.time)
     distance = rotary_encoder.position[end_idx] - rotary_encoder.position[start_idx]
-    return distance / (end_time - start_time)
+
+    # catch in case the ripple is within the first second of the recording
+    if start_time < 0:
+        return 2
+
+    else:
+        return distance / (end_time - start_time)
 
 
 def rotary_encoder_percentage_resting(
-    rotary_encoder: RotaryEncoder, threshold: float, max_time: float, ripples: List[CandidateEvent], plot: bool = True
+    rotary_encoder: RotaryEncoder,
+    threshold: float,
+    max_time: float,
+    ripples=None,
+    plot: bool = False,
 ) -> Tuple[float, float, List]:
-    """Checked with plotting but writ tests"""
+    """Checked with plotting but write tests"""
 
     bin_size = 1
     bin_edges = np.arange(0, max_time, bin_size)
@@ -162,13 +174,11 @@ def rotary_encoder_percentage_resting(
         _, ax1 = plt.subplots()
         ax2 = ax1.twinx()
         ax1.plot(bin_edges[:-1], speed, color="red")
-        onset_times=[ripple.onset for ripple in ripples]
-        onset_times_in_sec = [x/2500 for x in onset_times] 
-        y_vec= np.ones(len(ripples))
+        onset_times = [ripple.onset for ripple in ripples]
+        onset_times_in_sec = [x / 2500 for x in onset_times]
+        y_vec = np.ones(len(ripples))
         ax2.scatter(onset_times_in_sec, y_vec)
         plt.show()
-    
-    print('Done')
 
     return resting_percentage, resting_time, speed
 
@@ -180,6 +190,7 @@ def get_resting_ripples(
     sampling_rate_lfp: int,
 ) -> List[CandidateEvent]:
     """Assumes that the animal has not run forwards and backwards during the ripple"""
+
     return [
         ripple
         for ripple in ripples
@@ -190,18 +201,24 @@ def get_resting_ripples(
     ]
 
 
-def detect_ripple_events(
-    channel: int, lfp: np.ndarray, CA1_channels: List[int], sampling_rate: int
-) -> List[CandidateEvent]:
-
-    print(lfp[channel, :].size)
-    ripple_band_pre = compute_envelope(
+def do_preprocessing_lfp_for_ripple_analysis(
+    lfp: np.ndarray, sampling_rate: int, channel: int
+) -> np.ndarray:
+    ripple_band = compute_envelope(
         bandpass_filter(
             lfp[channel, :].reshape(1, lfp[channel, :].size), 80, 250, sampling_rate
         )
     )  # freq range Dupret [80 250]
-    ripple_band = signal.savgol_filter(ripple_band_pre, 101, 4)
+    ripple_band = signal.savgol_filter(ripple_band, 101, 4)
     ripple_band = ripple_band.reshape(lfp[channel, :].size, 1)
+    return ripple_band
+
+
+def detect_ripple_events(
+    channel: int, lfp: np.ndarray, CA1_channels: List[int], sampling_rate: int
+) -> List[CandidateEvent]:
+
+    ripple_band = do_preprocessing_lfp_for_ripple_analysis(lfp, sampling_rate, channel)
     median = np.median(ripple_band)
     upper_threshold = (
         median * 5
@@ -234,10 +251,10 @@ def detect_ripple_events(
         if value < lower_threshold and in_event and upper_exceeded:
             in_event = False
             upper_exceeded = False
-            
-            data= lfp[0, start_event:idx]
-            max_freq=get_event_frequency(data, sampling_rate)
-            
+
+            data = lfp[0, start_event:idx]
+            max_freq = get_event_frequency(data, sampling_rate)
+
             bandpower_ripple = bandpower(
                 lfp[0, start_event:idx], sampling_rate, 80, 250
             )
