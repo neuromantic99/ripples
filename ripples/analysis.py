@@ -40,6 +40,7 @@ from ripples.utils import (
     interleave_arrays,
     smallest_positive_index,
     unwrap_angles,
+    threshold_detect
 )
 from ripples.utils_npyx import load_lfp_npyx
 
@@ -127,9 +128,10 @@ def load_lfp(lfp_path: Path) -> Tuple[np.ndarray, np.ndarray]:
     # return np.flip(lfp, axis=0)
 
     # Chop off beginning & end of the recording without behavioural data
-    recording_onset = np.where(sync > 0.5)[0][0]
+    rising_edges = threshold_detect(sync, 0.5)
+    recording_onset = rising_edges[0]
     # behavioural recording stops at the first rising edge of the 1s 5 Hz pulse, sampling rate 2500 Hz
-    recording_offset = np.where(sync > 0.5)[0][-1250]
+    recording_offset = rising_edges[-5]
     lfp_chopped = lfp[:, recording_onset:recording_offset]
 
     return lfp_chopped, sync
@@ -188,13 +190,11 @@ def load_spikes(
     sys.path.remove(str(UMBRELLA / kilosort_path))
 
     # Chop off beginning & end of the recording without behavioural data
-    recording_onset = (
-        np.where(sync > 0.5)[0][0] / sampling_rate_lfp * params.sample_rate
-    )
+    rising_edges = threshold_detect(sync, 0.5)
+    recording_onset = rising_edges[0]/ sampling_rate_lfp * params.sample_rate
     # behavioural recording stops at the first rising edge of the 1s 5 Hz pulse, sampling rate 2500 Hz
-    recording_offset = (
-        np.where(sync > 0.5)[0][-1250] / sampling_rate_lfp * params.sample_rate
-    )
+    recording_offset = rising_edges[-5]/ sampling_rate_lfp * params.sample_rate
+   
     aligned_spike_times_ind = (spike_times > recording_onset) & (
         spike_times < recording_offset
     )
