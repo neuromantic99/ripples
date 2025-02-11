@@ -170,7 +170,7 @@ def load_spikes(
     region_channel: List[str],
     sync: np.ndarray,
     sampling_rate_lfp: float,
-    scatter_plot=False,
+    scatter_plot: bool = False,
 ):
 
     # TODO: filter noise clusters, not sure if Jana has vetted these
