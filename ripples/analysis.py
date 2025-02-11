@@ -212,7 +212,7 @@ def load_spikes(
     )  # to check if chopping works, assuming that there is at least one spike in the first second of the recording
     assert len(aligned_spike_times) == len(aligned_spike_clusters)
 
-    if scatter_plot == True:
+    if scatter_plot:
         # very slow, need to find a way to improve this if needed
         spike_depths = [
             cluster_df["depth"][int(np.where(cluster_df["cluster_id"] == cluster)[0])]
