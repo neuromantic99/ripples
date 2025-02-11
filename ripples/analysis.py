@@ -171,7 +171,7 @@ def load_spikes(
     sync: np.ndarray,
     sampling_rate_lfp: float,
     scatter_plot: bool = False,
-):
+) -> Tuple[np.ndarray, List[ClusterInfo]]:
 
     # TODO: filter noise clusters, not sure if Jana has vetted these
     # keep_idx = cluster_info[cluster_info["KSLabel"].isin(["good", "mua"])].index
