@@ -24,23 +24,25 @@ class ClusterInfo:
 class CandidateEvent(BaseModel):
     onset: int
     offset: int
-    peak_power: int | float
+    peak_amplitude: int | float
     peak_idx: int
     frequency: float
     bandpower_ripple: float
     detection_channel: int
+    raw_lfp: List[float]
 
 
 class RipplesSummary(BaseModel):
     retrosplenial: List[List[int]]
     dentate: List[List[int]]
     ca1: List[List[int]]
-    ripple_power: List[float]
+    ripple_amplitude: List[float]
     ripple_frequency: List[float]
     ripple_bandpower: List[float]
     resting_percentage: float
     resting_time: float
     events: List[CandidateEvent]
+    ripple_raw_lfp: List[List[float]]
 
 
 @dataclass

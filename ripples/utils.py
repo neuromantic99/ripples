@@ -4,12 +4,13 @@ from typing import List, TypeVar
 import numpy as np
 from scipy import signal, trapz
 from matplotlib import pyplot as plt
+from scipy import signal
 
 from ripples.models import SessionToAverage
 
 
 def bandpass_filter(
-    lfp: np.ndarray, low: float, high: float, sampling_rate: int, order: int = 4
+    lfp: np.ndarray, low: float, high: float, sampling_rate: float, order: int = 4
 ) -> np.ndarray:
     b, a = signal.butter(order, Wn=[low, high], fs=sampling_rate, btype="bandpass")
     return signal.filtfilt(b, a, lfp, axis=1)
@@ -17,33 +18,36 @@ def bandpass_filter(
 
 # adapted from https://www.askpython.com/python-modules/pandas/comparing-bandpower-matlab-python-numpy
 # still needs adjustments
-def bandpower(lfp: np.ndarray, sampling_rate: int, fmin: int, fmax: int) -> float:
-    freqrange = [fmin, fmax]
-    frequencies, psd = signal.welch(
-        lfp, sampling_rate, nperseg=sampling_rate, scaling="density"
-    )
-    freq_indices = np.where(
-        (frequencies >= freqrange[0]) & (frequencies <= freqrange[1])
-    )
-    band_power = np.trapz(
-        psd.reshape(np.size(psd))[freq_indices], frequencies[freq_indices]
-    )
+def bandpower(
+    lfp: np.ndarray, sampling_rate: float, fmin: int, fmax: int, method: str
+) -> float:
+    if method == "welch":
+        freqrange = [fmin, fmax]
+        frequencies, psd = signal.welch(
+            lfp, sampling_rate, nperseg=sampling_rate, scaling="density"
+        )
+        freq_indices = np.where(
+            (frequencies >= freqrange[0]) & (frequencies <= freqrange[1])
+        )
+        band_power = np.trapz(
+            psd.reshape(np.size(psd))[freq_indices], frequencies[freq_indices]
+        )
+    elif method == "periodogram":
+        f, Pxx = signal.periodogram(lfp, fs=sampling_rate)
+        ind_min = np.argmax(f > fmin) - 1
+        ind_max = np.argmax(f > fmax) - 1
+        band_power = trapz(Pxx[ind_min:ind_max], f[ind_min:ind_max])
+
     return band_power
 
 
-# import scipy
-# def bandpower(x, fs, fmin, fmax):
-#     f, Pxx = scipy.signal.periodogram(x, fs=fs)
-#     ind_min = scipy.argmax(f > fmin) - 1
-#     ind_max = scipy.argmax(f > fmax) - 1
-#     return scipy.trapz(Pxx[ind_min: ind_max], f[ind_min: ind_max])
-
-
-def get_event_frequency(lfp: np.ndarray, sampling_rate: int, plot=False) -> float:
+def get_event_frequency(
+    lfp: np.ndarray, sampling_rate: float, plot: bool = False
+) -> float:
     [f, Pxx] = signal.periodogram(lfp, fs=sampling_rate)
     max_idx = np.argmax(Pxx.reshape(len(f), 1).tolist())
     max_freq = f[max_idx]
-    if plot == True:
+    if plot:
         max_val = (Pxx.reshape(len(f), 1)).tolist()[max_idx]
         max_val = max_val[0]
         plt.figure()

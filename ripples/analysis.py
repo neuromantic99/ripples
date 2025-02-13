@@ -13,7 +13,7 @@ import mat73
 import numpy as np
 import pandas as pd
 from scipy import io
-from ripples.consts import HERE, SAMPLING_RATE_LFP
+from ripples.consts import HERE
 from ripples.gsheets_importer import gsheet2df
 from ripples.models import (
     ClusterInfo,
@@ -23,14 +23,16 @@ from ripples.models import (
     RotaryEncoder,
     Session,
 )
-from ripples.plotting import plot_channel_depth_profile, plot_lfp_spectrogram
+from ripples.plotting import (
+    plot_channel_depth_profile,
+    plot_lfp_spectrogram,
+    plot_resting_ripples,
+)
 from ripples.ripple_detection import (
     count_spikes_around_ripple,
     filter_candidate_ripples,
     get_candidate_ripples,
-    get_resting_ripples,
     remove_duplicate_ripples,
-    rotary_encoder_percentage_resting,
 )
 
 from ripples.utils import (
@@ -40,7 +42,7 @@ from ripples.utils import (
     interleave_arrays,
     smallest_positive_index,
     unwrap_angles,
-    threshold_detect
+    threshold_detect,
 )
 from ripples.utils_npyx import load_lfp_npyx
 
@@ -118,23 +120,27 @@ def map_channels_to_regions(coordinates: ProbeCoordinate, n_channels: int) -> Li
     return area_channel
 
 
-def load_lfp(lfp_path: Path) -> Tuple[np.ndarray, np.ndarray]:
+def load_lfp(lfp_path: Path) -> Tuple[np.ndarray, np.ndarray, float]:
 
-    lfp, sync = load_lfp_npyx(str(UMBRELLA / lfp_path))
+    lfp, sync, sampling_rate_lfp = load_lfp_npyx(str(UMBRELLA / lfp_path))
 
     # The long linear channels are interleaved (confirmed by plotting)
     lfp = np.concatenate((lfp[0::2, :], lfp[1::2, :]), axis=0)
-    # TODO: PRETTY SURE THIS FLIP SHOULD NOT BE HERE BUT AHHHHHHHHHHHHH
-    # return np.flip(lfp, axis=0)
+
+    assert lfp.shape[1] == len(sync)
 
     # Chop off beginning & end of the recording without behavioural data
     rising_edges = threshold_detect(sync, 0.5)
+    # sync signal consists in one 1s 5Hz pulse at the end and at the beginning of the recording, in between there is a 1Hz pulse
+    # behavioural recording starts at the first rising edge of the 1s 5Hz pulse at the beginning of the recording
     recording_onset = rising_edges[0]
     # behavioural recording stops at the first rising edge of the 1s 5 Hz pulse, sampling rate 2500 Hz
     recording_offset = rising_edges[-5]
     lfp_chopped = lfp[:, recording_onset:recording_offset]
 
-    return lfp_chopped, sync
+    assert lfp_chopped.shape[1] > 300 * sampling_rate_lfp  # longer than 5mins
+
+    return lfp_chopped, sync, sampling_rate_lfp
 
 
 def lfp_clear_internal_reference_channel(lfp: np.ndarray) -> np.ndarray:
@@ -170,8 +176,8 @@ def load_spikes(
     region_channel: List[str],
     sync: np.ndarray,
     sampling_rate_lfp: float,
-    scatter_plot: bool = False,
-) -> Tuple[np.ndarray, List[ClusterInfo]]:
+    plot: bool = False,
+) -> List[ClusterInfo]:
 
     # TODO: filter noise clusters, not sure if Jana has vetted these
     # keep_idx = cluster_info[cluster_info["KSLabel"].isin(["good", "mua"])].index
@@ -188,21 +194,21 @@ def load_spikes(
     sys.path.append(str(UMBRELLA / kilosort_path))
     params = importlib.import_module("params")
     sys.path.remove(str(UMBRELLA / kilosort_path))
+    sampling_rate_spikes = params.sample_rate
 
     # Chop off beginning & end of the recording without behavioural data
     rising_edges = threshold_detect(sync, 0.5)
-    recording_onset = rising_edges[0]/ sampling_rate_lfp * params.sample_rate
+    recording_onset = rising_edges[0] / sampling_rate_lfp * sampling_rate_spikes
     # behavioural recording stops at the first rising edge of the 1s 5 Hz pulse, sampling rate 2500 Hz
-    recording_offset = rising_edges[-5]/ sampling_rate_lfp * params.sample_rate
-   
+    recording_offset = rising_edges[-5] / sampling_rate_lfp * sampling_rate_spikes
+
     aligned_spike_times_ind = (spike_times > recording_onset) & (
         spike_times < recording_offset
     )
-    aligned_spike_times = spike_times[aligned_spike_times_ind]
     aligned_spike_times = (
         spike_times[aligned_spike_times_ind] - recording_onset
     )  # chop off beginning & end, set the time so that it alignes to rotary encoder
-    aligned_spike_times = aligned_spike_times / params.sample_rate
+    aligned_spike_times = aligned_spike_times / sampling_rate_spikes
     aligned_spike_clusters = spike_clusters.reshape(len(spike_clusters), 1)[
         aligned_spike_times_ind
     ]
@@ -212,8 +218,15 @@ def load_spikes(
     )  # to check if chopping works, assuming that there is at least one spike in the first second of the recording
     assert len(aligned_spike_times) == len(aligned_spike_clusters)
 
-    if scatter_plot:
-        # very slow, need to find a way to improve this if needed
+    if plot:
+        # bin the data to get an idea of spiking activity over the recording
+        num_bins = int(max(np.round(aligned_spike_times)))
+        # Use numpy's histogram function for equal width bins
+        hist, _ = np.histogram(aligned_spike_times, bins=num_bins)
+        plt.figure()
+        plt.hist(hist, bins="auto")
+
+        # Scatterplot, very slow, need to find a way to improve this if needed
         spike_depths = [
             cluster_df["depth"][int(np.where(cluster_df["cluster_id"] == cluster)[0])]
             for cluster in spike_clusters
@@ -225,18 +238,13 @@ def load_spikes(
         plt.scatter(aligned_spike_times, aligned_spike_depths)
         plt.show()
 
-    # bin the data to get an idea of spiking activity over the recording
-    num_bins = int(max(np.round(aligned_spike_times)))
-    # Use numpy's histogram function for equal width bins
-    hist, bins = np.histogram(aligned_spike_times, bins=num_bins)
-
     n_channels = len(region_channel)
     channel_map = np.arange(n_channels)
     channel_map = interleave_arrays(
         channel_map[: n_channels // 2], channel_map[n_channels // 2 :]
     )
 
-    return hist, [
+    return [
         ClusterInfo(
             spike_times=(
                 aligned_spike_times[aligned_spike_clusters == row["cluster_id"]]
@@ -319,6 +327,68 @@ def load_rotary_encoder(rotary_encoder_path: Path) -> RotaryEncoder:
     return RotaryEncoder(time=time, position=position_cm)
 
 
+def calculate_speed(
+    idx: int,
+    bin_edges_ind: np.ndarray,
+    rotary_encoder: RotaryEncoder,
+    sampling_rate: float,
+) -> np.ndarray:
+    start_time = bin_edges_ind[idx] / sampling_rate
+    end_time = bin_edges_ind[idx + 1] / sampling_rate
+    start_idx = smallest_positive_index(start_time - rotary_encoder.time)
+    end_idx = smallest_positive_index(end_time - rotary_encoder.time)
+    distance = rotary_encoder.position[end_idx] - rotary_encoder.position[start_idx]
+    assert (end_time - start_time) == 1
+    speed_cm_per_s = distance / (end_time - start_time)
+    return speed_cm_per_s
+
+
+def get_resting_periods(
+    rotary_encoder: RotaryEncoder, sampling_rate: float, max_time: float
+) -> Tuple[bool, List]:
+
+    bin_size = sampling_rate
+    bin_edges_ind = np.arange(0, max_time, bin_size)
+    speed_cm_per_s = []
+
+    for idx in range(len(bin_edges_ind) - 1):
+        speed_bin = calculate_speed(idx, bin_edges_ind, rotary_encoder, sampling_rate)
+        speed_cm_per_s = np.concatenate(
+            (speed_cm_per_s, np.full(int(round(sampling_rate)), speed_bin))
+        )
+
+    speed_cm_per_s = np.array(speed_cm_per_s)
+
+    last_idx = int(bin_edges_ind[-1])
+    max_time = max_time
+    if max_time > last_idx:
+        start_time = last_idx / sampling_rate
+        end_time = max_time / sampling_rate
+        start_idx = smallest_positive_index(start_time - np.array(rotary_encoder.time))
+        end_idx = smallest_positive_index(end_time - np.array(rotary_encoder.time))
+        distance = rotary_encoder.position[end_idx] - rotary_encoder.position[start_idx]
+        speed_extra_time = distance / (end_time - start_time)
+        speed_cm_per_s = np.concatenate(
+            (speed_cm_per_s, np.full(int(max_time) - last_idx, speed_extra_time))
+        )
+
+    assert len(speed_cm_per_s) == max_time
+
+    resting_ind = speed_cm_per_s == 0
+    assert len(resting_ind) == max_time
+
+    return resting_ind, speed_cm_per_s
+
+
+def load_channel_regions(channel_path: Path) -> List[str]:
+    with open(
+        channel_path,
+        "r",
+    ) as f:
+        reader = csv.reader(f)
+        return list(reader)[0]
+
+
 def map_channels_to_regions_existing_mat_file(
     metadata_probe: pd.DataFrame,
 ) -> List[str]:
@@ -345,7 +415,31 @@ def map_channels_to_regions_existing_mat_file(
 
 def cache_session(metadata_probe: pd.Series) -> None:
 
+    # load and preprocess LFP
+    lfp_raw, sync, sampling_rate_lfp = load_lfp(Path(metadata_probe["LFP path"]))
+    SAMPLING_RATE_LFP = sampling_rate_lfp
+    assert int(round(SAMPLING_RATE_LFP)) >= 2499 & int(round(SAMPLING_RATE_LFP)) <= 2501
+
+    lfp = lfp_clear_internal_reference_channel(lfp_raw)
+    rms_per_channel = lfp_get_noise_levels(lfp)
+    assert lfp.shape[0] == 384
+    assert lfp.shape[1] == lfp_raw.shape[1]
+    assert lfp[191, 0] != float  # reference channel, should be set to NaN
+
+    # load rotary encoder file
+    rotary_encoder = load_rotary_encoder(Path(metadata_probe["Rotary encoder path"]))
+    # identify resting periods based on running speed
+    resting_ind, speed_cm_per_s = get_resting_periods(
+        rotary_encoder, SAMPLING_RATE_LFP, lfp.shape[1]
+    )
+
+    resting_percentage = sum(resting_ind) / len(resting_ind)
+    resting_time = sum(resting_ind) / SAMPLING_RATE_LFP
+
+    # pull out recording specific data from google sheets
     recording_id = f"{metadata_probe['Session']}-{metadata_probe['Recording Name']}-Probe{metadata_probe['Probe']}"
+
+    # map channels to brain regions (based on neuropixel trajectory explorer)
 
     depth = (
         metadata_probe["Actual depth"]
@@ -362,30 +456,38 @@ def cache_session(metadata_probe: pd.Series) -> None:
         depth=depth,
     )
 
-    lfp, sync = load_lfp(Path(metadata_probe["LFP path"]))
+    channel_path = Path(
+        "C:/Python_code/ripples/results/New_code_0702/channel_regions/"
+        + recording_id
+        + ".csv"
+    )
 
-    lfp = lfp_clear_internal_reference_channel(lfp)
-    rms_per_channel = lfp_get_noise_levels(lfp)
+    if channel_path.exists():
+        region_channel = load_channel_regions(channel_path)
+        print("loading channelmap")
 
-    n_channels = lfp.shape[0]
-    region_channel = map_channels_to_regions(coordinates, n_channels)
-    hist, clusters_info = load_spikes(
+    else:
+        # #pulls out the corresponding brain region for each channel using the
+        # #neuropixels trajectory explorer (matlab engine)
+
+        region_channel = map_channels_to_regions(coordinates, lfp.shape[0])
+        print("loading NPX trajectory explorer to pull out channelmap")
+
+    assert len(region_channel) == 384
+    assert region_channel[383] == "Outside brain"
+
+    # load kilosort processed data (already preprocessed using matlab code & phy)
+    clusters_info = load_spikes(
         Path(metadata_probe["Kilosort path"]), region_channel, sync, SAMPLING_RATE_LFP
     )
     check_channel_order(clusters_info)
 
-    rotary_encoder = load_rotary_encoder(Path(metadata_probe["Rotary encoder path"]))
-
+    # save brain region for each channel in a seperate file
     data_path_channel_regions = (
-        HERE.parent
-        / "results"
-        / "test_cohort_new_remove_dupl_and_cluster"
-        / "channel_regions"
+        HERE.parent / "results" / "New_code_1002" / "channel_regions"
     )
-
     if not data_path_channel_regions.exists():
         os.makedirs(data_path_channel_regions)
-
     with open(
         data_path_channel_regions / f"{recording_id}.csv",
         "w",
@@ -393,8 +495,8 @@ def cache_session(metadata_probe: pd.Series) -> None:
         write = csv.writer(f)
         write.writerow(region_channel)
 
+    # plot and save lfp spectrogram
     plot_lfp_spectrogram(lfp, recording_id)
-    plot_channel_depth_profile(lfp, region_channel, clusters_info, recording_id)
 
     all_CA1_channels = [
         idx
@@ -402,39 +504,60 @@ def cache_session(metadata_probe: pd.Series) -> None:
         if region is not None and "CA1" in region
     ]
 
-    # make sure there are at least 10 CA1 channel to be sure that the rest of the code works
-    assert len(all_CA1_channels) > 10
-
     # Find CA1 channel with highest Ripple power and +/- two channels to detect ripples, then do CAR
     swr_power = compute_power(
         bandpass_filter(lfp, 125, 250, SAMPLING_RATE_LFP, order=4)
     )
-    max_powerChanCA1 = np.argmax(swr_power[all_CA1_channels])
+    max_powerChanCA1 = np.nanargmax(swr_power[all_CA1_channels])
 
+    assert max_powerChanCA1 + 3 < len(all_CA1_channels)
+    assert max_powerChanCA1 - 2 >= 0
+
+    # CA1_channels are the channels in CA1 used for ripple detection
     CA1_channels = all_CA1_channels[max_powerChanCA1 - 2 : max_powerChanCA1 + 3]
 
     # If the reference channel is part of the selected channels for ripple analysis replace with neighbouring channel with the higher ripple power
     if 191 in CA1_channels:
         CA1_channels.remove(191)
         lower_channel = all_CA1_channels[max_powerChanCA1 - 3]
-        higher_channel = all_CA1_channels[max_powerChanCA1 + 3]
-        if swr_power[lower_channel] > swr_power[higher_channel]:
+        if (max_powerChanCA1 + 3) > (len(all_CA1_channels) - 1):
+            swr_pow_higher_channel = 0
+        else:
+            higher_channel = all_CA1_channels[max_powerChanCA1 + 3]
+            swr_pow_higher_channel = swr_power[higher_channel]
+        if swr_power[lower_channel] > swr_pow_higher_channel:
             CA1_channels.append(lower_channel)
         else:
             CA1_channels.append(higher_channel)
 
+    assert region_channel[min(CA1_channels) : (max(CA1_channels) + 1)] == [
+        "CA1",
+        "CA1",
+        "CA1",
+        "CA1",
+        "CA1",
+    ]  # +1 due to how python slicing works if I got it correctly?
+
     CA1_channels_swr_pow = list(swr_power[CA1_channels])
     print(f"CA1_channels: {CA1_channels} , power: {CA1_channels_swr_pow}")
 
+    plot_channel_depth_profile(
+        lfp, region_channel, clusters_info, recording_id, CA1_channels
+    )
+
     # CAR ToDo: test if we want to have it in here (take mean across channels and then subtract from each channel)
     lfp_all_CA1 = lfp[all_CA1_channels, :]
-    lfp_CA1 = lfp[CA1_channels, :]
+    lfp_detection_chans = lfp[CA1_channels, :]
     common_average = np.nanmean(lfp_all_CA1, axis=0)
-    lfp_CA1_CAR = np.subtract(lfp_CA1, common_average)
+    lfp_detection_chans_CAR = np.subtract(lfp_detection_chans, common_average)
+
+    assert lfp_detection_chans_CAR.shape[0] == len(CA1_channels)
+    assert lfp_detection_chans_CAR.shape[1] == len(resting_ind)
 
     candidate_events = get_candidate_ripples(
-        lfp_CA1_CAR,
+        lfp_detection_chans_CAR,
         CA1_channels,
+        resting_ind,
         sampling_rate=SAMPLING_RATE_LFP,
     )
 
@@ -443,10 +566,10 @@ def cache_session(metadata_probe: pd.Series) -> None:
     )
 
     ripples_channels = filter_candidate_ripples(
-        candidate_events, lfp_CA1_CAR, common_average, SAMPLING_RATE_LFP
+        candidate_events, lfp_detection_chans_CAR, common_average, SAMPLING_RATE_LFP
     )
 
-    # Flattening makes further processing easier but loses the channel information
+    # Flattening makes further processing easier
     ripples = [event for events in ripples_channels for event in events]
 
     print(f"Number of ripples after filtering: {len(ripples)}")
@@ -455,19 +578,16 @@ def cache_session(metadata_probe: pd.Series) -> None:
         ripples, 0.05, SAMPLING_RATE_LFP
     )  # James 0.3, Buzaki 0.12, elife 0.05
 
-    num_resting_and_running = len(ripples)
-    print(f"Number of ripples before running removal: {num_resting_and_running}")
-    threshold = 1  # Check if this is correct
-    ripples = get_resting_ripples(ripples, rotary_encoder, threshold, SAMPLING_RATE_LFP)
-    num_resting = len(ripples)
+    print(f"Number of ripples after removing duplicates: {len(ripples)}")
 
-    print(f"Number of ripples after running removal: {num_resting}")
-
-    padding = 2
-    n_bins = 200
-
-    resting_percentage, resting_time, speed = rotary_encoder_percentage_resting(
-        rotary_encoder, threshold, lfp.shape[1] / SAMPLING_RATE_LFP, ripples
+    plot_resting_ripples(
+        rotary_encoder,
+        lfp.shape[1],
+        ripples,
+        resting_ind,
+        speed_cm_per_s,
+        SAMPLING_RATE_LFP,
+        recording_id,
     )
 
     ripples_summary: Dict[str, Any] = {
@@ -478,7 +598,10 @@ def cache_session(metadata_probe: pd.Series) -> None:
 
     area_map = {"dg-": "dentate", "ca1": "ca1", "rsp": "retrosplenial"}
 
+    # Identify clusters for each region and extract spikeTimes around each ripple event for each cluster
     # TODO: Probably this is the wrong place to compute this
+    padding = 2  # in seconds
+    n_bins = 200  # 200 bins = 100 bins/second
     for area in area_map:
 
         channels_keep = [
@@ -510,11 +633,12 @@ def cache_session(metadata_probe: pd.Series) -> None:
 
         ripples_summary[area_map[area]] = spike_count
 
-    ripples_summary["ripple_power"] = [ripple.peak_power for ripple in ripples]
+    ripples_summary["ripple_amplitude"] = [ripple.peak_amplitude for ripple in ripples]
     ripples_summary["ripple_frequency"] = [ripple.frequency for ripple in ripples]
     ripples_summary["ripple_bandpower"] = [
         ripple.bandpower_ripple for ripple in ripples
     ]
+    ripples_summary["ripple_raw_lfp"] = [ripple.raw_lfp for ripple in ripples]
 
     session: Session = Session(
         ripples_summary=RipplesSummary(**ripples_summary),
@@ -527,30 +651,16 @@ def cache_session(metadata_probe: pd.Series) -> None:
     )
 
     with open(
-        HERE.parent
-        / "results"
-        / "test_cohort_new_remove_dupl_and_cluster"
-        / f"{recording_id}.json",
+        HERE.parent / "results" / "New_code_1002" / f"{recording_id}.json",
         "w",
     ) as f:
         json.dump(session.model_dump(), f)
-
-
-def load_channel_regions(metadata_probe: pd.Series) -> List[str]:
-    recording_id = f"{metadata_probe['Session']}-{metadata_probe['Recording Name']}-Probe{metadata_probe['Probe']}"
-    with open(
-        f"/Users/jamesrowland/Code/ripples/results/channel_regions/{recording_id}.csv",
-        "r",
-    ) as f:
-        reader = csv.reader(f)
-        return list(reader)[0]
 
 
 def main() -> None:
 
     reprocess = False
     metadata = gsheet2df("1HSERPbm-kDhe6X8bgflxvTuK24AfdrZJzbdBy11Hpcg", "sessions", 1)
-
     metadata = metadata[metadata["test_cohort"] == "TRUE"]
     metadata = metadata[metadata["Ignore"] == "FALSE"]
     metadata = metadata[metadata["Perfect_Peak"] == "Definitely"]
@@ -566,7 +676,7 @@ def main() -> None:
         json_path = (
             HERE.parent
             / "results"
-            / "test_cohort_new_remove_dupl_and_cluster"
+            / "New_code_1002"
             / f"{row['Session']}-{row['Recording Name']}-Probe{row['Probe']}.json"
         )
 

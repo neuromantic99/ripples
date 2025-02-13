@@ -13,7 +13,7 @@ from ripples.utils import mean_across_same_session
 sns.set_theme(context="talk", style="ticks")
 
 
-RESULTS_PATH = HERE.parent / "results" / "test_cohort_less_restrictive"
+RESULTS_PATH = HERE.parent / "results" / "New_code_0702"
 
 
 def number_of_spikes_per_cell_per_ripple(session: Session) -> float:
@@ -90,7 +90,7 @@ def get_ripple_rate(session: Session) -> float:
         session.length_seconds * session.ripples_summary.resting_percentage
     )
 
-    return len(session.ripples_summary.ripple_power) / resting_seconds
+    return len(session.ripples_summary.ripple_amplitude) / resting_seconds
 
 
 def resting_time_ripple_rate_correlation(
@@ -176,13 +176,13 @@ def number_of_ripples_plot(WTs: List[Session], NLGFs: List[Session]) -> None:
 # TODO: add in statistics
 
 
-def ripple_power_plot(WTs: List[Session], NLGFs: List[Session]) -> None:
+def ripple_amplitude_plot(WTs: List[Session], NLGFs: List[Session]) -> None:
 
     wt_data = mean_across_same_session(
         [
             SessionToAverage(
                 remove_month_from_session_id(session.id),
-                np.mean(session.ripples_summary.ripple_power).astype(float),
+                np.mean(session.ripples_summary.ripple_amplitude).astype(float),
             )
             for session in WTs
         ]
@@ -192,7 +192,7 @@ def ripple_power_plot(WTs: List[Session], NLGFs: List[Session]) -> None:
         [
             SessionToAverage(
                 remove_month_from_session_id(session.id),
-                np.mean(session.ripples_summary.ripple_power).astype(float),
+                np.mean(session.ripples_summary.ripple_amplitude).astype(float),
             )
             for session in NLGFs
         ]
@@ -202,9 +202,9 @@ def ripple_power_plot(WTs: List[Session], NLGFs: List[Session]) -> None:
     sns.stripplot({"WTs": wt_data, "NLGFs": nlgf_data})
     sns.boxplot({"WTs": wt_data, "NLGFs": nlgf_data}, showfliers=False)
     plt.ylim(0, 40)
-    plt.ylabel(r"Ripple power ( $\mu$V)")
+    plt.ylabel(r"Ripple Amplitude ( $\mu$V)")
     plt.tight_layout()
-    plt.savefig(HERE.parent / "figures" / "resting_ripple_power.png")
+    plt.savefig(HERE.parent / "figures" / "resting_ripple_amplitude.png")
 
 
 def ripple_freq_plot(WTs: List[Session], NLGFs: List[Session]) -> None:
@@ -403,6 +403,9 @@ def load_sessions() -> Tuple[List[Session], List[Session]]:
         with open(file) as f:
             result = Session.model_validate_json(f.read())
 
+        if result.ripples_summary.ripple_amplitude == []:
+            continue
+
         if "wt" in file.name.lower():
             WTs.append(result)
         elif "nlgf" in file.name.lower():
@@ -420,7 +423,7 @@ def main() -> None:
     spikes_per_ripple(WTs, NLGFs)
     number_of_ripples_plot(WTs, NLGFs)
 
-    ripple_power_plot(WTs, NLGFs)
+    ripple_amplitude_plot(WTs, NLGFs)
     ripple_freq_plot(WTs, NLGFs)
     ripple_bandpower_plot(WTs, NLGFs)
     plot_grand_ripple_triggered_average(WTs, NLGFs)

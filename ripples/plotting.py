@@ -11,7 +11,12 @@ import seaborn as sns
 
 from ripples.consts import SAMPLING_RATE_LFP, HERE
 from ripples.models import ClusterInfo, ClusterType, RotaryEncoder, CandidateEvent
-from ripples.utils import bandpass_filter, compute_power, moving_average
+from ripples.utils import (
+    bandpass_filter,
+    compute_power,
+    moving_average,
+    smallest_positive_index,
+)
 
 
 def plot_ripples(ripples: List[List[CandidateEvent]], filtered_lfp: np.ndarray) -> None:
@@ -102,6 +107,7 @@ def plot_channel_depth_profile(
     region_channel: List[str],
     clusters_info: List[ClusterInfo],
     recording_id: str,
+    CA1_channels: List[int],
 ) -> None:
 
     fig, ax1 = plt.subplots()
@@ -143,14 +149,61 @@ def plot_channel_depth_profile(
     for position in plot_xlabels.values():
         plt.axvline(position[0], color="black", linestyle="--")
         plt.axvline(position[2], color="black", linestyle="--")
+    plt.axvline(min(CA1_channels), color="red", linestyle="--")
+    plt.axvline(max(CA1_channels), color="red", linestyle="--")
     ax1.legend()
     ax2.legend(loc="center right")
 
-    figure_path = HERE.parent / "figures" / "depth_profiles"
+    figure_path = (
+        HERE.parent / "results" / "New_code_1002" / "figures" / "depth_profiles"
+    )
     if not figure_path.exists():
         os.makedirs(figure_path)
 
     plt.savefig(figure_path / f"{recording_id}_depth_profile.png")
+
+
+def plot_resting_ripples(
+    rotary_encoder: RotaryEncoder,
+    max_time: float,
+    ripples: List[CandidateEvent],
+    resting_ind: bool,
+    speed_cm_per_s: np.array,
+    sampling_rate: float,
+    recording_id: str,
+) -> None:
+
+    bin_size = 1
+    max_time = max_time / sampling_rate
+    bin_edges = np.arange(0, max_time, bin_size)
+
+    speed = []
+    for idx in range(len(bin_edges) - 1):
+        start_time = bin_edges[idx]
+        end_time = bin_edges[idx + 1]
+        start_idx = smallest_positive_index(start_time - rotary_encoder.time)
+        end_idx = smallest_positive_index(end_time - rotary_encoder.time)
+        distance = rotary_encoder.position[end_idx] - rotary_encoder.position[start_idx]
+        speed.append(distance / (end_time - start_time))
+
+    speed = np.array(speed)
+
+    onset_times = [ripple.onset for ripple in ripples]
+    onset_times_in_sec = [x / sampling_rate for x in onset_times]
+    y_vec = np.ones(len(ripples))
+
+    plt.figure()
+    plt.plot(speed_cm_per_s[0:-1:2500])
+    plt.plot(resting_ind[0:-1:2500])
+    plt.scatter(onset_times_in_sec, y_vec)
+
+    figure_path = (
+        HERE.parent / "results" / "New_code_1002" / "figures" / "Resting_ripples"
+    )
+    if not figure_path.exists():
+        os.makedirs(figure_path)
+
+    plt.savefig(figure_path / f"{recording_id}_resting_ripples.png")
 
 
 def plot_lfp_spectrogram(lfp: np.ndarray, recording_id: str) -> None:
@@ -187,7 +240,9 @@ def plot_lfp_spectrogram(lfp: np.ndarray, recording_id: str) -> None:
     plt.xlabel("Frequency (Hz)")
     plt.ylabel("Channel")
 
-    figure_path = HERE.parent / "figures" / "lfp_spectrograms"
+    figure_path = (
+        HERE.parent / "results" / "New_code_1002" / "figures" / "lfp_spectrograms"
+    )
     if not figure_path.exists():
         os.makedirs(figure_path)
 

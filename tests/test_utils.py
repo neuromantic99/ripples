@@ -18,7 +18,7 @@ def test_bandpower() -> None:
         + 0.5 * np.sin(2 * np.pi * 50 * t)
         + 0.5 * np.sin(2 * np.pi * 180 * t)
     )
-    pow = bandpower(x, 2500, 120, 150)
+    pow = bandpower(x, 2500, 120, 150, "welch")
     expected_pow = 0.5  # calculated using the matlab bandpower function 'pow= bandpower(x,2500,[120 150]);'
     testing.assert_allclose(pow, expected_pow)
 
@@ -31,9 +31,9 @@ def test_bandpower_real_ripple() -> None:
     data = m["data_m"]
     data = data.reshape(6500)
 
-    pow = bandpower(data[3249:3331], 2500, 80, 250)
+    pow = bandpower(data[3249:3331], 2500, 80, 250, "welch")
     expected_pow = 1.664419112875033e03  # calculated using the matlab bandpower function 'pow= bandpower(data,2500,[80 250]);'
-    testing.assert_allclose(pow, expected_pow, rtol=0.29, atol=473)
+    testing.assert_allclose(pow, expected_pow, rtol=0.1, atol=100)
 
 
 def test_get_event_frequency() -> None:
