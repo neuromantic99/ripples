@@ -23,13 +23,68 @@ def event_power_check(
     return [
         event
         for event in candidate_events
-        if event.peak_amplitude >= comparison_power[event.peak_idx] * 1.5
+        if event.peak_amplitude >= comparison_power[event.peak_idx] * 2
     ]
 
 
 def frequency_check(candidate_events: List[CandidateEvent]) -> List[CandidateEvent]:
     min_freq = 100  # 100Hz, eLife paper
     return [event for event in candidate_events if event.frequency > min_freq]
+
+
+def get_quality_metrics(
+    candidate_events: List[CandidateEvent],
+    lfp: np.ndarray,
+    common_average: np.ndarray,
+    sampling_rate: float,
+) -> Tuple[list, list, list, list, list, List[CandidateEvent]]:
+
+    assert lfp.shape[1] == common_average.shape[0]
+
+    candidate_events = [
+        event for event in candidate_events if event.offset - event.onset > 41
+    ]
+
+    print(
+        f"Number of ripples after length check: {len([event for event in candidate_events])}"
+    )
+
+    freq_check = [event.frequency > 100 for event in candidate_events]
+    common_average_power = compute_envelope(
+        bandpass_filter(np.expand_dims(common_average, axis=0), 120, 250, sampling_rate)
+    )
+    common_average_power = common_average_power.reshape(common_average_power.shape[1])
+    CAR_check = [
+        event.peak_amplitude >= common_average_power[event.peak_idx] * 2
+        for event in candidate_events
+    ]
+    CAR_check_lr = [
+        event.peak_amplitude >= common_average_power[event.peak_idx] * 1.5
+        for event in candidate_events
+    ]
+    supra_ripple_band_power = compute_envelope(
+        bandpass_filter(lfp[2, :].reshape(1, lfp.shape[1]), 250, 500, sampling_rate)
+    )
+    supra_ripple_band_power = supra_ripple_band_power.reshape(
+        supra_ripple_band_power.shape[1]
+    )
+    SRP_check = [
+        event.peak_amplitude >= supra_ripple_band_power[event.peak_idx] * 2
+        for event in candidate_events
+    ]
+    SRP_check_lr = [
+        event.peak_amplitude >= supra_ripple_band_power[event.peak_idx] * 1.5
+        for event in candidate_events
+    ]
+
+    return (
+        freq_check,
+        CAR_check,
+        SRP_check,
+        CAR_check_lr,
+        SRP_check_lr,
+        candidate_events,
+    )
 
 
 def filter_candidate_ripples(
@@ -55,7 +110,7 @@ def filter_candidate_ripples(
     )
 
     common_average_power = compute_envelope(
-        bandpass_filter(np.expand_dims(common_average, axis=0), 80, 250, sampling_rate)
+        bandpass_filter(np.expand_dims(common_average, axis=0), 120, 250, sampling_rate)
     )
 
     candidate_events = [
@@ -67,7 +122,7 @@ def filter_candidate_ripples(
     )
 
     supra_ripple_band_power = compute_envelope(
-        bandpass_filter(lfp, 200, 500, sampling_rate)
+        bandpass_filter(lfp, 250, 500, sampling_rate)
     )
 
     return [
@@ -133,7 +188,7 @@ def do_preprocessing_lfp_for_ripple_analysis(
 ) -> Tuple[np.ndarray, np.ndarray]:
     ripple_band_unsmoothed = compute_envelope(
         bandpass_filter(
-            lfp[channel, :].reshape(1, lfp[channel, :].size), 80, 250, sampling_rate
+            lfp[channel, :].reshape(1, lfp[channel, :].size), 120, 250, sampling_rate
         )
     )  # freq range Dupret [80 250]
     ripple_band = signal.savgol_filter(ripple_band_unsmoothed, 101, 4)
@@ -157,6 +212,7 @@ def detect_ripple_events(
     assert len(ripple_band) == len(resting_ind)
 
     median = np.median(ripple_band[resting_ind])
+    # sd = np.std(ripple_band[resting_ind])
     upper_threshold = (
         median * 5
     )  # see if change to 5*SD makes sense (as done in elife paper)
@@ -193,7 +249,11 @@ def detect_ripple_events(
             max_freq = get_event_frequency(lfp_ripple, sampling_rate)
 
             bandpower_ripple = bandpower(
-                lfp_det_chans[channel, start_event:idx], sampling_rate, 80, 250, "welch"
+                lfp_det_chans[channel, start_event:idx],
+                sampling_rate,
+                120,
+                250,
+                "welch",
             )
 
             # save raw LFP around ripple

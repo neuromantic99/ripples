@@ -39,10 +39,14 @@ class RipplesSummary(BaseModel):
     ripple_amplitude: List[float]
     ripple_frequency: List[float]
     ripple_bandpower: List[float]
+    ripple_freq_check: List[bool]
+    ripple_CAR_check: List[bool]
+    ripple_SRP_check: List[bool]
+    ripple_CAR_check_lr: List[bool]
+    ripple_SRP_check_lr: List[bool]
     resting_percentage: float
     resting_time: float
     events: List[CandidateEvent]
-    ripple_raw_lfp: List[List[float]]
 
 
 @dataclass

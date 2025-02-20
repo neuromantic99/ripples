@@ -50,5 +50,5 @@ def load_lfp_npyx(data_path: str) -> Tuple[np.ndarray, np.ndarray, float]:
         again=False,
     )
 
-    assert len(sync) == lfp.shape[1]
+    assert len(sync) == lfp.shape[1] 
     return lfp, sync, sampling_rate_lfp

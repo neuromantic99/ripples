@@ -47,14 +47,25 @@ def get_event_frequency(
     [f, Pxx] = signal.periodogram(lfp, fs=sampling_rate)
     max_idx = np.argmax(Pxx.reshape(len(f), 1).tolist())
     max_freq = f[max_idx]
-    if plot:
-        max_val = (Pxx.reshape(len(f), 1)).tolist()[max_idx]
-        max_val = max_val[0]
-        plt.figure()
-        plt.plot(f, Pxx.reshape(len(f), 1))
-        plt.plot(max_freq, max_val, "ro")
-        plt.show()
-    return max_freq
+    max_val = (Pxx.reshape(len(f), 1)).tolist()[max_idx]
+    max_val = max_val[0]
+    peaks, _ = signal.find_peaks(Pxx, height=0.25 * max_val)
+    if list(peaks):
+        peaks_freq = np.array(f[peaks])
+        if sum(peaks_freq > 100) == 1:
+            ev_freq = peaks_freq[peaks_freq > 100]
+        elif sum(peaks_freq > 100) == 0:
+            ev_freq = peaks_freq[np.argmax(Pxx[peaks])]
+        elif sum(peaks_freq > 100) > 1:
+            Pxx = np.array(Pxx)
+            ev_freq = peaks_freq[Pxx[peaks] == max(Pxx[peaks[peaks_freq > 100]])]
+
+        return float(ev_freq)
+    else:
+        print(
+            "Ripple event with frequency peak at the border of the spectrum - will be excluded"
+        )
+        return 1
 
 
 def compute_envelope(lfp: np.ndarray) -> np.ndarray:

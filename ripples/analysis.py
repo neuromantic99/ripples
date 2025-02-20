@@ -33,6 +33,7 @@ from ripples.ripple_detection import (
     filter_candidate_ripples,
     get_candidate_ripples,
     remove_duplicate_ripples,
+    get_quality_metrics,
 )
 
 from ripples.utils import (
@@ -127,7 +128,7 @@ def load_lfp(lfp_path: Path) -> Tuple[np.ndarray, np.ndarray, float]:
     # The long linear channels are interleaved (confirmed by plotting)
     lfp = np.concatenate((lfp[0::2, :], lfp[1::2, :]), axis=0)
 
-    assert lfp.shape[1] == len(sync)
+    assert len(sync) == lfp.shape[1] 
 
     # Chop off beginning & end of the recording without behavioural data
     rising_edges = threshold_detect(sync, 0.5)
@@ -484,7 +485,7 @@ def cache_session(metadata_probe: pd.Series) -> None:
 
     # save brain region for each channel in a seperate file
     data_path_channel_regions = (
-        HERE.parent / "results" / "New_code_1002" / "channel_regions"
+        HERE.parent / "results" / "test_1902_5Median" / "channel_regions"
     )
     if not data_path_channel_regions.exists():
         os.makedirs(data_path_channel_regions)
@@ -565,9 +566,11 @@ def cache_session(metadata_probe: pd.Series) -> None:
         f"Number of ripples before filtering: {len([event for events in candidate_events for event in events])}"
     )
 
-    ripples_channels = filter_candidate_ripples(
-        candidate_events, lfp_detection_chans_CAR, common_average, SAMPLING_RATE_LFP
-    )
+    # ripples_channels = filter_candidate_ripples(
+    #     candidate_events, lfp_detection_chans_CAR, common_average, SAMPLING_RATE_LFP
+    # )
+
+    ripples_channels = candidate_events
 
     # Flattening makes further processing easier
     ripples = [event for events in ripples_channels for event in events]
@@ -579,6 +582,12 @@ def cache_session(metadata_probe: pd.Series) -> None:
     )  # James 0.3, Buzaki 0.12, elife 0.05
 
     print(f"Number of ripples after removing duplicates: {len(ripples)}")
+
+    freq_check, CAR_check, SRP_check, CAR_check_lr, SRP_check_lr, ripples = (
+        get_quality_metrics(
+            ripples, lfp_detection_chans_CAR, common_average, SAMPLING_RATE_LFP
+        )
+    )
 
     plot_resting_ripples(
         rotary_encoder,
@@ -638,7 +647,11 @@ def cache_session(metadata_probe: pd.Series) -> None:
     ripples_summary["ripple_bandpower"] = [
         ripple.bandpower_ripple for ripple in ripples
     ]
-    ripples_summary["ripple_raw_lfp"] = [ripple.raw_lfp for ripple in ripples]
+    ripples_summary["ripple_freq_check"] = freq_check
+    ripples_summary["ripple_CAR_check"] = CAR_check
+    ripples_summary["ripple_SRP_check"] = SRP_check
+    ripples_summary["ripple_CAR_check_lr"] = CAR_check_lr
+    ripples_summary["ripple_SRP_check_lr"] = SRP_check_lr
 
     session: Session = Session(
         ripples_summary=RipplesSummary(**ripples_summary),
@@ -651,7 +664,7 @@ def cache_session(metadata_probe: pd.Series) -> None:
     )
 
     with open(
-        HERE.parent / "results" / "New_code_1002" / f"{recording_id}.json",
+        HERE.parent / "results" / "test_1902_5Median" / f"{recording_id}.json",
         "w",
     ) as f:
         json.dump(session.model_dump(), f)
@@ -659,7 +672,7 @@ def cache_session(metadata_probe: pd.Series) -> None:
 
 def main() -> None:
 
-    reprocess = False
+    reprocess = True
     metadata = gsheet2df("1HSERPbm-kDhe6X8bgflxvTuK24AfdrZJzbdBy11Hpcg", "sessions", 1)
     metadata = metadata[metadata["test_cohort"] == "TRUE"]
     metadata = metadata[metadata["Ignore"] == "FALSE"]
@@ -676,7 +689,7 @@ def main() -> None:
         json_path = (
             HERE.parent
             / "results"
-            / "New_code_1002"
+            / "test_1902_5Median"
             / f"{row['Session']}-{row['Recording Name']}-Probe{row['Probe']}.json"
         )
 

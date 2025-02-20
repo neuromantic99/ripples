@@ -155,7 +155,7 @@ def plot_channel_depth_profile(
     ax2.legend(loc="center right")
 
     figure_path = (
-        HERE.parent / "results" / "New_code_1002" / "figures" / "depth_profiles"
+        HERE.parent / "results" / "test_1902_5Median" / "figures" / "depth_profiles"
     )
     if not figure_path.exists():
         os.makedirs(figure_path)
@@ -198,7 +198,7 @@ def plot_resting_ripples(
     plt.scatter(onset_times_in_sec, y_vec)
 
     figure_path = (
-        HERE.parent / "results" / "New_code_1002" / "figures" / "Resting_ripples"
+        HERE.parent / "results" / "test_1902_5Median" / "figures" / "Resting_ripples"
     )
     if not figure_path.exists():
         os.makedirs(figure_path)
@@ -241,7 +241,7 @@ def plot_lfp_spectrogram(lfp: np.ndarray, recording_id: str) -> None:
     plt.ylabel("Channel")
 
     figure_path = (
-        HERE.parent / "results" / "New_code_1002" / "figures" / "lfp_spectrograms"
+        HERE.parent / "results" / "test_1902_5Median" / "figures" / "lfp_spectrograms"
     )
     if not figure_path.exists():
         os.makedirs(figure_path)
