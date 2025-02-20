@@ -530,13 +530,7 @@ def cache_session(metadata_probe: pd.Series) -> None:
         else:
             CA1_channels.append(higher_channel)
 
-    assert region_channel[min(CA1_channels) : (max(CA1_channels) + 1)] == [
-        "CA1",
-        "CA1",
-        "CA1",
-        "CA1",
-        "CA1",
-    ]  # +1 due to how python slicing works if I got it correctly?
+    assert region_channel[min(CA1_channels) : (max(CA1_channels) + 1)] == ["CA1"] * 5 
 
     CA1_channels_swr_pow = list(swr_power[CA1_channels])
     print(f"CA1_channels: {CA1_channels} , power: {CA1_channels_swr_pow}")
