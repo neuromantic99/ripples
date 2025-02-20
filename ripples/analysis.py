@@ -358,7 +358,6 @@ def get_resting_periods(
             (speed_cm_per_s, np.full(int(round(sampling_rate)), speed_bin))
         )
 
-    speed_cm_per_s = np.array(speed_cm_per_s)
 
     last_idx = int(bin_edges_ind[-1])
     max_time = max_time
