@@ -346,7 +346,7 @@ def calculate_speed(
 
 def get_resting_periods(
     rotary_encoder: RotaryEncoder, sampling_rate: float, max_time: float
-) -> Tuple[bool, List]:
+) -> Tuple[np.ndarray, np.ndarray]:
 
     bin_size = sampling_rate
     bin_edges_ind = np.arange(0, max_time, bin_size)
