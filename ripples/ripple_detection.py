@@ -11,6 +11,7 @@ from ripples.utils import (
     bandpower,
     get_event_frequency,
 )
+from ripples.consts import SUPRA_RIPPLE_BAND,RIPPLE_BAND
 
 
 def length_check(candidate_events: List[CandidateEvent]) -> List[CandidateEvent]:
@@ -51,7 +52,7 @@ def get_quality_metrics(
 
     freq_check = [event.frequency > 100 for event in candidate_events]
     common_average_power = compute_envelope(
-        bandpass_filter(np.expand_dims(common_average, axis=0), 120, 250, sampling_rate)
+        bandpass_filter(np.expand_dims(common_average, axis=0), RIPPLE_BAND[0], RIPPLE_BAND[1], sampling_rate)
     )
     common_average_power = common_average_power.reshape(common_average_power.shape[1])
     CAR_check = [
@@ -63,7 +64,7 @@ def get_quality_metrics(
         for event in candidate_events
     ]
     supra_ripple_band_power = compute_envelope(
-        bandpass_filter(lfp[2, :].reshape(1, lfp.shape[1]), 250, 500, sampling_rate)
+        bandpass_filter(lfp[2, :].reshape(1, lfp.shape[1]), SUPRA_RIPPLE_BAND[0], SUPRA_RIPPLE_BAND[1], sampling_rate)
     )
     supra_ripple_band_power = supra_ripple_band_power.reshape(
         supra_ripple_band_power.shape[1]
@@ -110,7 +111,7 @@ def filter_candidate_ripples(
     )
 
     common_average_power = compute_envelope(
-        bandpass_filter(np.expand_dims(common_average, axis=0), 120, 250, sampling_rate)
+        bandpass_filter(np.expand_dims(common_average, axis=0), RIPPLE_BAND[0], RIPPLE_BAND[1], sampling_rate)
     )
 
     candidate_events = [
@@ -122,7 +123,7 @@ def filter_candidate_ripples(
     )
 
     supra_ripple_band_power = compute_envelope(
-        bandpass_filter(lfp, 250, 500, sampling_rate)
+        bandpass_filter(lfp, SUPRA_RIPPLE_BAND[0], SUPRA_RIPPLE_BAND[1], sampling_rate)
     )
 
     return [
@@ -188,7 +189,7 @@ def do_preprocessing_lfp_for_ripple_analysis(
 ) -> Tuple[np.ndarray, np.ndarray]:
     ripple_band_unsmoothed = compute_envelope(
         bandpass_filter(
-            lfp[channel, :].reshape(1, lfp[channel, :].size), 120, 250, sampling_rate
+            lfp[channel, :].reshape(1, lfp[channel, :].size), RIPPLE_BAND[0], RIPPLE_BAND[1], sampling_rate
         )
     )  # freq range Dupret [80 250]
     ripple_band = signal.savgol_filter(ripple_band_unsmoothed, 101, 4)
@@ -200,7 +201,7 @@ def do_preprocessing_lfp_for_ripple_analysis(
 def detect_ripple_events(
     channel: int,
     lfp_det_chans: np.ndarray,
-    CA1_channels: List[int],
+    detection_channels_ca1: List[int],
     resting_ind: bool,
     sampling_rate: float,
 ) -> List[CandidateEvent]:
@@ -251,8 +252,8 @@ def detect_ripple_events(
             bandpower_ripple = bandpower(
                 lfp_det_chans[channel, start_event:idx],
                 sampling_rate,
-                120,
-                250,
+                RIPPLE_BAND[0],
+                RIPPLE_BAND[1],
                 "welch",
             )
 
@@ -270,7 +271,7 @@ def detect_ripple_events(
                         offset=idx,
                         peak_amplitude=ripple_band_unsmoothed[peak_idx],
                         peak_idx=peak_idx,
-                        detection_channel=CA1_channels[channel],
+                        detection_channel=detection_channels_ca1[channel],
                         frequency=max_freq,
                         bandpower_ripple=bandpower_ripple,
                         raw_lfp=raw_lfp,
@@ -285,15 +286,15 @@ def detect_ripple_events(
 
 def get_candidate_ripples(
     lfp_det_chans: np.ndarray,
-    CA1_channels: List[int],
+    detection_channels_ca1: List[int],
     resting_ind: bool,
     sampling_rate: float,
 ) -> List[List[CandidateEvent]]:
     """Gets candidate ripples from a common average referenced LFP"""
-    channel_idx = list(range(0, len(CA1_channels)))
+    channel_idx = list(range(0, len(detection_channels_ca1)))
     return [
         detect_ripple_events(
-            channel, lfp_det_chans, CA1_channels, resting_ind, sampling_rate
+            channel, lfp_det_chans, detection_channels_ca1, resting_ind, sampling_rate
         )
         for channel in channel_idx
     ]

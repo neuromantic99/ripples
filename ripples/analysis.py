@@ -47,6 +47,8 @@ from ripples.utils import (
 )
 from ripples.utils_npyx import load_lfp_npyx
 
+from ripples.consts import RIPPLE_BAND
+
 REFERENCE_CHANNEL = 191  # For the long linear, change depending on probe
 
 UMBRELLA = Path("//128.40.224.64/marcbusche/Jana/Neuropixels")
@@ -132,6 +134,8 @@ def load_lfp(lfp_path: Path) -> Tuple[np.ndarray, np.ndarray, float]:
 
     # Chop off beginning & end of the recording without behavioural data
     rising_edges = threshold_detect(sync, 0.5)
+    assert rising_edges[4] - rising_edges[0] == 0.8*sampling_rate_lfp 
+    assert rising_edges[-1] - rising_edges[-5] == 0.8*sampling_rate_lfp
     # sync signal consists in one 1s 5Hz pulse at the end and at the beginning of the recording, in between there is a 1Hz pulse
     # behavioural recording starts at the first rising edge of the 1s 5Hz pulse at the beginning of the recording
     recording_onset = rising_edges[0]
@@ -339,7 +343,6 @@ def calculate_speed(
     start_idx = smallest_positive_index(start_time - rotary_encoder.time)
     end_idx = smallest_positive_index(end_time - rotary_encoder.time)
     distance = rotary_encoder.position[end_idx] - rotary_encoder.position[start_idx]
-    assert (end_time - start_time) == 1
     speed_cm_per_s = distance / (end_time - start_time)
     return speed_cm_per_s
 
@@ -417,24 +420,23 @@ def cache_session(metadata_probe: pd.Series) -> None:
 
     # load and preprocess LFP
     lfp_raw, sync, sampling_rate_lfp = load_lfp(Path(metadata_probe["LFP path"]))
-    SAMPLING_RATE_LFP = sampling_rate_lfp
-    assert int(round(SAMPLING_RATE_LFP)) >= 2499 & int(round(SAMPLING_RATE_LFP)) <= 2501
+    assert int(round(sampling_rate_lfp)) >= 2499 & int(round(sampling_rate_lfp)) <= 2501
 
     lfp = lfp_clear_internal_reference_channel(lfp_raw)
     rms_per_channel = lfp_get_noise_levels(lfp)
     assert lfp.shape[0] == 384
     assert lfp.shape[1] == lfp_raw.shape[1]
-    assert lfp[191, 0] != float  # reference channel, should be set to NaN
+    assert np.isnan(lfp[191, 0])  # reference channel, should be set to NaN
 
     # load rotary encoder file
     rotary_encoder = load_rotary_encoder(Path(metadata_probe["Rotary encoder path"]))
     # identify resting periods based on running speed
     resting_ind, speed_cm_per_s = get_resting_periods(
-        rotary_encoder, SAMPLING_RATE_LFP, lfp.shape[1]
+        rotary_encoder, sampling_rate_lfp, lfp.shape[1]
     )
 
     resting_percentage = sum(resting_ind) / len(resting_ind)
-    resting_time = sum(resting_ind) / SAMPLING_RATE_LFP
+    resting_time = sum(resting_ind) / sampling_rate_lfp
 
     # pull out recording specific data from google sheets
     recording_id = f"{metadata_probe['Session']}-{metadata_probe['Recording Name']}-Probe{metadata_probe['Probe']}"
@@ -478,7 +480,7 @@ def cache_session(metadata_probe: pd.Series) -> None:
 
     # load kilosort processed data (already preprocessed using matlab code & phy)
     clusters_info = load_spikes(
-        Path(metadata_probe["Kilosort path"]), region_channel, sync, SAMPLING_RATE_LFP
+        Path(metadata_probe["Kilosort path"]), region_channel, sync, sampling_rate_lfp
     )
     check_channel_order(clusters_info)
 
@@ -496,7 +498,7 @@ def cache_session(metadata_probe: pd.Series) -> None:
         write.writerow(region_channel)
 
     # plot and save lfp spectrogram
-    plot_lfp_spectrogram(lfp, recording_id)
+    plot_lfp_spectrogram(lfp, recording_id, sampling_rate_lfp)
 
     all_CA1_channels = [
         idx
@@ -506,7 +508,7 @@ def cache_session(metadata_probe: pd.Series) -> None:
 
     # Find CA1 channel with highest Ripple power and +/- two channels to detect ripples, then do CAR
     swr_power = compute_power(
-        bandpass_filter(lfp, 125, 250, SAMPLING_RATE_LFP, order=4)
+        bandpass_filter(lfp, RIPPLE_BAND[0], RIPPLE_BAND[1], sampling_rate_lfp, order=4)
     )
     max_powerChanCA1 = np.nanargmax(swr_power[all_CA1_channels])
 
@@ -514,11 +516,11 @@ def cache_session(metadata_probe: pd.Series) -> None:
     assert max_powerChanCA1 - 2 >= 0
 
     # CA1_channels are the channels in CA1 used for ripple detection
-    CA1_channels = all_CA1_channels[max_powerChanCA1 - 2 : max_powerChanCA1 + 3]
+    detection_channels_ca1 = all_CA1_channels[max_powerChanCA1 - 2 : max_powerChanCA1 + 3]
 
     # If the reference channel is part of the selected channels for ripple analysis replace with neighbouring channel with the higher ripple power
-    if 191 in CA1_channels:
-        CA1_channels.remove(191)
+    if 191 in detection_channels_ca1:
+        detection_channels_ca1.remove(191)
         lower_channel = all_CA1_channels[max_powerChanCA1 - 3]
         if (max_powerChanCA1 + 3) > (len(all_CA1_channels) - 1):
             swr_pow_higher_channel = 0
@@ -526,33 +528,33 @@ def cache_session(metadata_probe: pd.Series) -> None:
             higher_channel = all_CA1_channels[max_powerChanCA1 + 3]
             swr_pow_higher_channel = swr_power[higher_channel]
         if swr_power[lower_channel] > swr_pow_higher_channel:
-            CA1_channels.append(lower_channel)
+            detection_channels_ca1.append(lower_channel)
         else:
-            CA1_channels.append(higher_channel)
+            detection_channels_ca1.append(higher_channel)
 
     assert region_channel[min(CA1_channels) : (max(CA1_channels) + 1)] == ["CA1"] * 5 
 
-    CA1_channels_swr_pow = list(swr_power[CA1_channels])
-    print(f"CA1_channels: {CA1_channels} , power: {CA1_channels_swr_pow}")
+    CA1_channels_swr_pow = list(swr_power[detection_channels_ca1])
+    print(f"CA1_channels: {detection_channels_ca1} , power: {CA1_channels_swr_pow}")
 
     plot_channel_depth_profile(
-        lfp, region_channel, clusters_info, recording_id, CA1_channels
+        lfp, region_channel, clusters_info, recording_id, detection_channels_ca1
     )
 
-    # CAR ToDo: test if we want to have it in here (take mean across channels and then subtract from each channel)
+    # CAR: take mean across all CA1 channels and then subtract from each channel
     lfp_all_CA1 = lfp[all_CA1_channels, :]
-    lfp_detection_chans = lfp[CA1_channels, :]
+    lfp_detection_chans = lfp[detection_channels_ca1, :]
     common_average = np.nanmean(lfp_all_CA1, axis=0)
     lfp_detection_chans_CAR = np.subtract(lfp_detection_chans, common_average)
 
-    assert lfp_detection_chans_CAR.shape[0] == len(CA1_channels)
+    assert lfp_detection_chans_CAR.shape[0] == len(detection_channels_ca1)
     assert lfp_detection_chans_CAR.shape[1] == len(resting_ind)
 
     candidate_events = get_candidate_ripples(
         lfp_detection_chans_CAR,
-        CA1_channels,
+        detection_channels_ca1,
         resting_ind,
-        sampling_rate=SAMPLING_RATE_LFP,
+        sampling_rate=sampling_rate_lfp,
     )
 
     print(
@@ -571,14 +573,14 @@ def cache_session(metadata_probe: pd.Series) -> None:
     print(f"Number of ripples after filtering: {len(ripples)}")
 
     ripples = remove_duplicate_ripples(
-        ripples, 0.05, SAMPLING_RATE_LFP
+        ripples, 0.05, sampling_rate_lfp
     )  # James 0.3, Buzaki 0.12, elife 0.05
 
     print(f"Number of ripples after removing duplicates: {len(ripples)}")
 
     freq_check, CAR_check, SRP_check, CAR_check_lr, SRP_check_lr, ripples = (
         get_quality_metrics(
-            ripples, lfp_detection_chans_CAR, common_average, SAMPLING_RATE_LFP
+            ripples, lfp_detection_chans_CAR, common_average, sampling_rate_lfp
         )
     )
 
@@ -588,7 +590,7 @@ def cache_session(metadata_probe: pd.Series) -> None:
         ripples,
         resting_ind,
         speed_cm_per_s,
-        SAMPLING_RATE_LFP,
+        sampling_rate_lfp,
         recording_id,
     )
 
@@ -628,7 +630,7 @@ def cache_session(metadata_probe: pd.Series) -> None:
                 spike_times=spike_times,
                 padding=padding,
                 num_bins=n_bins,
-                sampling_rate_lfp=SAMPLING_RATE_LFP,
+                sampling_rate_lfp=sampling_rate_lfp,
             )
             for ripple in ripples
         ]
@@ -650,9 +652,10 @@ def cache_session(metadata_probe: pd.Series) -> None:
         ripples_summary=RipplesSummary(**ripples_summary),
         clusters_info=clusters_info,
         id=metadata_probe["Session"],
-        length_seconds=lfp.shape[1] / SAMPLING_RATE_LFP,
+        length_seconds=lfp.shape[1] / sampling_rate_lfp,
         rms_per_channel=rms_per_channel,
-        CA1_channels_analysed=CA1_channels,
+        sampling_rate_lfp=sampling_rate_lfp,
+        CA1_channels_analysed=detection_channels_ca1,
         CA1_channels_swr_pow=CA1_channels_swr_pow,
     )
 

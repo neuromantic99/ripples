@@ -9,7 +9,7 @@ from scipy.stats import zscore
 import seaborn as sns
 
 
-from ripples.consts import SAMPLING_RATE_LFP, HERE
+from ripples.consts import HERE
 from ripples.models import ClusterInfo, ClusterType, RotaryEncoder, CandidateEvent
 from ripples.utils import (
     bandpass_filter,
@@ -17,7 +17,7 @@ from ripples.utils import (
     moving_average,
     smallest_positive_index,
 )
-
+from ripples.consts import SUPRA_RIPPLE_BAND,RIPPLE_BAND
 
 def plot_ripples(ripples: List[List[CandidateEvent]], filtered_lfp: np.ndarray) -> None:
 
@@ -81,14 +81,14 @@ def plot_ripples_against_position(
         plt.axvline(ripple.onset / sampling_rate_lfp, color="red")
 
 
-def plot_frequency_depth(lfp: np.ndarray, ax: Any | None = None) -> None:
-    lfp = lfp[:, : SAMPLING_RATE_LFP * 360]
+def plot_frequency_depth(lfp: np.ndarray, sampling_rate_lfp: float, ax: Any | None = None) -> None:
+    lfp = lfp[:, : np.round(sampling_rate_lfp * 360)]
     swr_power = compute_power(
-        bandpass_filter(lfp, 125, 250, SAMPLING_RATE_LFP, order=4)
+        bandpass_filter(lfp, RIPPLE_BAND[0], RIPPLE_BAND[1], sampling_rate_lfp, order=4)
     )
     # 4th order doesn't work at these frequencies
-    theta_power = compute_power(bandpass_filter(lfp, 4, 8, SAMPLING_RATE_LFP, order=3))
-    delta_power = compute_power(bandpass_filter(lfp, 1, 3, SAMPLING_RATE_LFP, order=3))
+    theta_power = compute_power(bandpass_filter(lfp, 4, 8, sampling_rate_lfp, order=3))
+    delta_power = compute_power(bandpass_filter(lfp, 1, 3, sampling_rate_lfp, order=3))
     plotting_class = ax if ax is not None else plt
     plotting_class.plot(zscore(swr_power, nan_policy="omit"), label="SWR")
     plotting_class.plot(zscore(theta_power, nan_policy="omit"), label="Theta")
@@ -167,7 +167,7 @@ def plot_resting_ripples(
     rotary_encoder: RotaryEncoder,
     max_time: float,
     ripples: List[CandidateEvent],
-    resting_ind: bool,
+    resting_ind: np.array,
     speed_cm_per_s: np.array,
     sampling_rate: float,
     recording_id: str,
@@ -206,9 +206,9 @@ def plot_resting_ripples(
     plt.savefig(figure_path / f"{recording_id}_resting_ripples.png")
 
 
-def plot_lfp_spectrogram(lfp: np.ndarray, recording_id: str) -> None:
+def plot_lfp_spectrogram(lfp: np.ndarray, recording_id: str, sampling_rate_lfp: float) -> None:
     result = []
-    lfp = lfp[:, : SAMPLING_RATE_LFP * 180]
+    lfp = lfp[:, : np.round(sampling_rate_lfp * 180)]
 
     max_freq = 550
     edges = (
@@ -222,7 +222,7 @@ def plot_lfp_spectrogram(lfp: np.ndarray, recording_id: str) -> None:
         end = edges[idx + 1]
 
         result.append(
-            compute_power(bandpass_filter(lfp, start, end, SAMPLING_RATE_LFP, order=3))
+            compute_power(bandpass_filter(lfp, start, end, sampling_rate_lfp, order=3))
         )
 
     result = np.array(result).T

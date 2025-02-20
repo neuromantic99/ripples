@@ -7,7 +7,7 @@ import seaborn as sns
 from matplotlib import pyplot as plt
 from scipy.stats import zscore
 
-from ripples.consts import HERE, SAMPLING_RATE_LFP
+from ripples.consts import HERE, SAMPLING_RATE_LFP, RIPPLE_BAND, SUPRA_RIPPLE_BAND
 from ripples.models import ClusterType, Session, SessionToAverage
 
 from ripples.utils import mean_across_same_session, bandpass_filter, compute_envelope
@@ -30,7 +30,7 @@ def plot_ripple_raw(WTs: List[Session], NLGFs: List[Session]) -> None:
             if not list(raw):
                 continue
             else:
-                filtered = bandpass_filter(raw.reshape(1, len(raw)), 120, 250, 2500)
+                filtered = bandpass_filter(raw.reshape(1, len(raw)), RIPPLE_BAND[0], RIPPLE_BAND[1], SAMPLING_RATE_LFP)
                 envelope = signal.savgol_filter(compute_envelope(filtered), 101, 4)
                 filtered = filtered.reshape(filtered.shape[1], 1)
                 envelope = envelope.reshape(envelope.shape[1], 1)
@@ -40,7 +40,7 @@ def plot_ripple_raw(WTs: List[Session], NLGFs: List[Session]) -> None:
                 fig, axs = plt.subplots(3, 1, sharex=True)
                 time = range(-500, 500, 1)
 
-                fs = 2500
+                fs = SAMPLING_RATE_LFP
                 w = 6.0
                 sig = raw
                 freq = np.linspace(1, fs / 2, 100)
@@ -53,8 +53,8 @@ def plot_ripple_raw(WTs: List[Session], NLGFs: List[Session]) -> None:
                     cmap="viridis",
                     shading="gouraud",
                 )
-                axs[0].axhline(80, color="red", linestyle="-")
-                axs[0].axhline(250, color="red", linestyle="-")
+                axs[0].axhline(RIPPLE_BAND[0], color="red", linestyle="-")
+                axs[0].axhline(RIPPLE_BAND[1], color="red", linestyle="-")
                 font = {"size": 10}
                 axs[0].set_title(
                     f"freq_check: {WTs[rec].ripples_summary.ripple_freq_check[n]};CAR_check:{WTs[rec].ripples_summary.ripple_CAR_check[n]};SRP_check:{WTs[rec].ripples_summary.ripple_SRP_check[n]};CAR_check_lr:{WTs[rec].ripples_summary.ripple_CAR_check_lr[n]};SRP_check_lr:{WTs[rec].ripples_summary.ripple_SRP_check_lr[n]}",
@@ -130,7 +130,7 @@ def plot_ripple_raw(WTs: List[Session], NLGFs: List[Session]) -> None:
             if not list(raw):
                 continue
             else:
-                filtered = bandpass_filter(raw.reshape(1, len(raw)), 120, 250, 2500)
+                filtered = bandpass_filter(raw.reshape(1, len(raw)), RIPPLE_BAND[0], RIPPLE_BAND[1], SAMPLING_RATE_LFP)
                 envelope = signal.savgol_filter(compute_envelope(filtered), 101, 4)
                 filtered = filtered.reshape(filtered.shape[1], 1)
                 envelope = envelope.reshape(envelope.shape[1], 1)
@@ -140,7 +140,7 @@ def plot_ripple_raw(WTs: List[Session], NLGFs: List[Session]) -> None:
                 fig, axs = plt.subplots(3, 1, sharex=True)
                 time = range(-500, 500, 1)
 
-                fs = 2500
+                fs = SAMPLING_RATE_LFP
                 w = 6.0
                 sig = raw
                 freq = np.linspace(1, fs / 2, 100)
@@ -153,8 +153,8 @@ def plot_ripple_raw(WTs: List[Session], NLGFs: List[Session]) -> None:
                     cmap="viridis",
                     shading="gouraud",
                 )
-                axs[0].axhline(80, color="red", linestyle="-")
-                axs[0].axhline(250, color="red", linestyle="-")
+                axs[0].axhline(RIPPLE_BAND[0], color="red", linestyle="-")
+                axs[0].axhline(RIPPLE_BAND[1], color="red", linestyle="-")
                 font = {"size": 10}
                 axs[0].set_title(
                     f"freq_check: {NLGFs[rec].ripples_summary.ripple_freq_check[n]};CAR_check:{NLGFs[rec].ripples_summary.ripple_CAR_check[n]};SRP_check:{NLGFs[rec].ripples_summary.ripple_SRP_check[n]};CAR_check_lr:{NLGFs[rec].ripples_summary.ripple_CAR_check_lr[n]};SRP_check_lr:{NLGFs[rec].ripples_summary.ripple_SRP_check_lr[n]}",

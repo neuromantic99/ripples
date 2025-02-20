@@ -1,6 +1,7 @@
 import numpy as np
 from numpy import testing
 from scipy import io
+from pathlib import Path
 
 from ripples.models import CandidateEvent, RotaryEncoder
 from ripples.ripple_detection import (
@@ -15,7 +16,7 @@ from ripples.utils import get_event_frequency
 
 from unittest.mock import MagicMock, patch
 
-from ripples.consts import SAMPLING_RATE_LFP
+from ripples.consts import SAMPLING_RATE_LFP, HERE
 
 MIN_DISTANCE = 0.01 * SAMPLING_RATE_LFP  # 10 ms
 
@@ -28,7 +29,9 @@ def test_get_resting_periods() -> None:
     resting_ind, speed = get_resting_periods(
         rotary_encoder, SAMPLING_RATE_LFP, max_time
     )
-    assert 90 - sum(resting_ind) / 2500 == len(rotary_encoder.time) - 2
+    assert 90 - sum(resting_ind) / 2500 == len(rotary_encoder.time) - 2 
+    # max time in seconds - resting time/sampling_rate should be equivalent to the length of rotary encoder time
+    # because that is the locomotion  period; I am subtracting 2 because of the binning used for resting_ind calculation
     assert resting_ind[int(41.5 * SAMPLING_RATE_LFP)] == False
     assert resting_ind[int(85 * SAMPLING_RATE_LFP)] == False
     assert resting_ind[int(9 * SAMPLING_RATE_LFP)] == True
@@ -628,7 +631,7 @@ def test_do_preprocessing_lfp_for_ripple_analysis() -> None:
     )  # need to mimic an array with at leat two channels for the code to work
 
     sm_envelope, _ = do_preprocessing_lfp_for_ripple_analysis(data, 2500, 0)
-    m = io.loadmat("C:/Python_code/ripples/matlab_comparison_ripple_detection.mat")
+    m = io.loadmat(Path(HERE.parent / "matlab" / "matlab_comparison_ripple_detection.mat"))
 
     testing.assert_allclose(
         m["data_m"][:, 1000:21500], data[1, 1000:21500].reshape(1, 20500)
@@ -644,9 +647,7 @@ def test_do_preprocessing_lfp_for_ripple_analysis() -> None:
 
 def test_do_preprocessing_lfp_for_ripple_analysis_real_ripple() -> None:
 
-    m = io.loadmat(
-        "C:/Python_code/ripples/matlab_comparison_ripple_detection_real_ripple.mat"
-    )
+    m = io.loadmat(Path(HERE.parent / "matlab" / "matlab_comparison_ripple_detection_real_ripple.mat"))
 
     data = m["data_m"]
 

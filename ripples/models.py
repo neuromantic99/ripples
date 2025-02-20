@@ -61,6 +61,7 @@ class Session(BaseModel):
     id: str
     length_seconds: float
     rms_per_channel: List[float]
+    sampling_rate_lfp: float
     CA1_channels_analysed: List[int]
     CA1_channels_swr_pow: List[float]
 
