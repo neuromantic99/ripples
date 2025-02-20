@@ -350,7 +350,7 @@ def get_resting_periods(
 
     bin_size = sampling_rate
     bin_edges_ind = np.arange(0, max_time, bin_size)
-    speed_cm_per_s = []
+    speed_cm_per_s = np.array([])
 
     for idx in range(len(bin_edges_ind) - 1):
         speed_bin = calculate_speed(idx, bin_edges_ind, rotary_encoder, sampling_rate)
