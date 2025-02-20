@@ -640,7 +640,7 @@ def load_sessions() -> Tuple[List[Session], List[Session]]:
         with open(file) as f:
             result = Session.model_validate_json(f.read())
 
-        if result.ripples_summary.ripple_amplitude == []:
+        if not result.ripples_summary.ripple_amplitude:
             continue
 
         if "wt" in file.name.lower():
