@@ -13,7 +13,7 @@ import mat73
 import numpy as np
 import pandas as pd
 from scipy import io
-from ripples.consts import HERE
+from ripples.consts import HERE, RESULTS_PATH, RIPPLE_BAND, DETECTION_METHOD
 from ripples.gsheets_importer import gsheet2df
 from ripples.models import (
     ClusterInfo,
@@ -46,8 +46,6 @@ from ripples.utils import (
     threshold_detect,
 )
 from ripples.utils_npyx import load_lfp_npyx
-
-from ripples.consts import RIPPLE_BAND
 
 REFERENCE_CHANNEL = 191  # For the long linear, change depending on probe
 
@@ -130,12 +128,12 @@ def load_lfp(lfp_path: Path) -> Tuple[np.ndarray, np.ndarray, float]:
     # The long linear channels are interleaved (confirmed by plotting)
     lfp = np.concatenate((lfp[0::2, :], lfp[1::2, :]), axis=0)
 
-    assert len(sync) == lfp.shape[1] 
+    (len(sync) == lfp.shape[1]) | (len(sync) == (lfp.shape[1] + 1))
 
     # Chop off beginning & end of the recording without behavioural data
     rising_edges = threshold_detect(sync, 0.5)
-    assert rising_edges[4] - rising_edges[0] == 0.8*sampling_rate_lfp 
-    assert rising_edges[-1] - rising_edges[-5] == 0.8*sampling_rate_lfp
+    assert rising_edges[4] - rising_edges[0] == 0.8 * sampling_rate_lfp
+    assert rising_edges[-1] - rising_edges[-5] == 0.8 * sampling_rate_lfp
     # sync signal consists in one 1s 5Hz pulse at the end and at the beginning of the recording, in between there is a 1Hz pulse
     # behavioural recording starts at the first rising edge of the 1s 5Hz pulse at the beginning of the recording
     recording_onset = rising_edges[0]
@@ -361,7 +359,6 @@ def get_resting_periods(
             (speed_cm_per_s, np.full(int(round(sampling_rate)), speed_bin))
         )
 
-
     last_idx = int(bin_edges_ind[-1])
     max_time = max_time
     if max_time > last_idx:
@@ -485,9 +482,7 @@ def cache_session(metadata_probe: pd.Series) -> None:
     check_channel_order(clusters_info)
 
     # save brain region for each channel in a seperate file
-    data_path_channel_regions = (
-        HERE.parent / "results" / "test_1902_5Median" / "channel_regions"
-    )
+    data_path_channel_regions = RESULTS_PATH / "channel_regions"
     if not data_path_channel_regions.exists():
         os.makedirs(data_path_channel_regions)
     with open(
@@ -516,7 +511,9 @@ def cache_session(metadata_probe: pd.Series) -> None:
     assert max_powerChanCA1 - 2 >= 0
 
     # CA1_channels are the channels in CA1 used for ripple detection
-    detection_channels_ca1 = all_CA1_channels[max_powerChanCA1 - 2 : max_powerChanCA1 + 3]
+    detection_channels_ca1 = all_CA1_channels[
+        max_powerChanCA1 - 2 : max_powerChanCA1 + 3
+    ]
 
     # If the reference channel is part of the selected channels for ripple analysis replace with neighbouring channel with the higher ripple power
     if 191 in detection_channels_ca1:
@@ -532,13 +529,21 @@ def cache_session(metadata_probe: pd.Series) -> None:
         else:
             detection_channels_ca1.append(higher_channel)
 
-    assert region_channel[min(CA1_channels) : (max(CA1_channels) + 1)] == ["CA1"] * 5 
+    assert (
+        region_channel[min(detection_channels_ca1) : (max(detection_channels_ca1) + 1)]
+        == ["CA1"] * 5
+    )
 
     CA1_channels_swr_pow = list(swr_power[detection_channels_ca1])
     print(f"CA1_channels: {detection_channels_ca1} , power: {CA1_channels_swr_pow}")
 
     plot_channel_depth_profile(
-        lfp, region_channel, clusters_info, recording_id, detection_channels_ca1
+        lfp,
+        region_channel,
+        clusters_info,
+        recording_id,
+        detection_channels_ca1,
+        sampling_rate_lfp,
     )
 
     # CAR: take mean across all CA1 channels and then subtract from each channel
@@ -554,7 +559,8 @@ def cache_session(metadata_probe: pd.Series) -> None:
         lfp_detection_chans_CAR,
         detection_channels_ca1,
         resting_ind,
-        sampling_rate=sampling_rate_lfp,
+        sampling_rate_lfp,
+        DETECTION_METHOD,
     )
 
     print(
@@ -660,7 +666,7 @@ def cache_session(metadata_probe: pd.Series) -> None:
     )
 
     with open(
-        HERE.parent / "results" / "test_1902_5Median" / f"{recording_id}.json",
+        RESULTS_PATH / f"{recording_id}.json",
         "w",
     ) as f:
         json.dump(session.model_dump(), f)
@@ -668,11 +674,11 @@ def cache_session(metadata_probe: pd.Series) -> None:
 
 def main() -> None:
 
-    reprocess = True
+    reprocess = False
     metadata = gsheet2df("1HSERPbm-kDhe6X8bgflxvTuK24AfdrZJzbdBy11Hpcg", "sessions", 1)
     metadata = metadata[metadata["test_cohort"] == "TRUE"]
     metadata = metadata[metadata["Ignore"] == "FALSE"]
-    metadata = metadata[metadata["Perfect_Peak"] == "Definitely"]
+    # metadata = metadata[metadata["Perfect_Peak"] == "Definitely"]
 
     sessions_keep = []
     for session in metadata["Session"].to_list():
@@ -683,9 +689,7 @@ def main() -> None:
 
     for _, row in metadata.iterrows():
         json_path = (
-            HERE.parent
-            / "results"
-            / "test_1902_5Median"
+            RESULTS_PATH
             / f"{row['Session']}-{row['Recording Name']}-Probe{row['Probe']}.json"
         )
 

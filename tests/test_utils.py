@@ -1,4 +1,5 @@
 import numpy as np
+from pathlib import Path
 from numpy import testing
 from scipy import io
 
@@ -9,6 +10,8 @@ from ripples.utils import (
     get_event_frequency,
     bandpower,
 )
+
+from ripples.consts import HERE
 
 
 def test_bandpower() -> None:
@@ -25,7 +28,11 @@ def test_bandpower() -> None:
 
 def test_bandpower_real_ripple() -> None:
     m = io.loadmat(
-        "C:/Python_code/ripples/matlab_comparison_ripple_detection_real_ripple.mat"
+        Path(
+            HERE.parent
+            / "matlab"
+            / "matlab_comparison_ripple_detection_real_ripple.mat"
+        )
     )
 
     data = m["data_m"]
@@ -39,12 +46,12 @@ def test_bandpower_real_ripple() -> None:
 def test_get_event_frequency() -> None:
     t = np.arange(0, 1, 1 / 1000)
     test_data = (
-        np.sin(2 * np.pi * 50 * t)
-        + 0.5 * np.sin(2 * np.pi * 120 * t)
+        np.sin(2 * np.pi * 120 * t)
+        + 0.5 * np.sin(2 * np.pi * 50 * t)
         + 0.5 * np.sin(2 * np.pi * 160 * t)
     )
     f = get_event_frequency(test_data, 1000)
-    expected_f = 50
+    expected_f = 120
     assert f == expected_f
 
 

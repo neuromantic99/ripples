@@ -11,7 +11,7 @@ from ripples.utils import (
     bandpower,
     get_event_frequency,
 )
-from ripples.consts import SUPRA_RIPPLE_BAND,RIPPLE_BAND
+from ripples.consts import SUPRA_RIPPLE_BAND, RIPPLE_BAND
 
 
 def length_check(candidate_events: List[CandidateEvent]) -> List[CandidateEvent]:
@@ -52,7 +52,12 @@ def get_quality_metrics(
 
     freq_check = [event.frequency > 100 for event in candidate_events]
     common_average_power = compute_envelope(
-        bandpass_filter(np.expand_dims(common_average, axis=0), RIPPLE_BAND[0], RIPPLE_BAND[1], sampling_rate)
+        bandpass_filter(
+            np.expand_dims(common_average, axis=0),
+            RIPPLE_BAND[0],
+            RIPPLE_BAND[1],
+            sampling_rate,
+        )
     )
     common_average_power = common_average_power.reshape(common_average_power.shape[1])
     CAR_check = [
@@ -64,7 +69,12 @@ def get_quality_metrics(
         for event in candidate_events
     ]
     supra_ripple_band_power = compute_envelope(
-        bandpass_filter(lfp[2, :].reshape(1, lfp.shape[1]), SUPRA_RIPPLE_BAND[0], SUPRA_RIPPLE_BAND[1], sampling_rate)
+        bandpass_filter(
+            lfp[2, :].reshape(1, lfp.shape[1]),
+            SUPRA_RIPPLE_BAND[0],
+            SUPRA_RIPPLE_BAND[1],
+            sampling_rate,
+        )
     )
     supra_ripple_band_power = supra_ripple_band_power.reshape(
         supra_ripple_band_power.shape[1]
@@ -111,7 +121,12 @@ def filter_candidate_ripples(
     )
 
     common_average_power = compute_envelope(
-        bandpass_filter(np.expand_dims(common_average, axis=0), RIPPLE_BAND[0], RIPPLE_BAND[1], sampling_rate)
+        bandpass_filter(
+            np.expand_dims(common_average, axis=0),
+            RIPPLE_BAND[0],
+            RIPPLE_BAND[1],
+            sampling_rate,
+        )
     )
 
     candidate_events = [
@@ -189,7 +204,10 @@ def do_preprocessing_lfp_for_ripple_analysis(
 ) -> Tuple[np.ndarray, np.ndarray]:
     ripple_band_unsmoothed = compute_envelope(
         bandpass_filter(
-            lfp[channel, :].reshape(1, lfp[channel, :].size), RIPPLE_BAND[0], RIPPLE_BAND[1], sampling_rate
+            lfp[channel, :].reshape(1, lfp[channel, :].size),
+            RIPPLE_BAND[0],
+            RIPPLE_BAND[1],
+            sampling_rate,
         )
     )  # freq range Dupret [80 250]
     ripple_band = signal.savgol_filter(ripple_band_unsmoothed, 101, 4)
@@ -204,6 +222,7 @@ def detect_ripple_events(
     detection_channels_ca1: List[int],
     resting_ind: bool,
     sampling_rate: float,
+    method: str,
 ) -> List[CandidateEvent]:
 
     ripple_band, ripple_band_unsmoothed = do_preprocessing_lfp_for_ripple_analysis(
@@ -212,12 +231,16 @@ def detect_ripple_events(
 
     assert len(ripple_band) == len(resting_ind)
 
-    median = np.median(ripple_band[resting_ind])
-    # sd = np.std(ripple_band[resting_ind])
-    upper_threshold = (
-        median * 5
-    )  # see if change to 5*SD makes sense (as done in elife paper)
-    lower_threshold = median * 2.5
+    if method == "median":
+        median = np.median(ripple_band[resting_ind])
+        upper_threshold = median * 5
+        lower_threshold = median * 2.5
+
+    elif method == "sd":
+        sd = np.std(ripple_band[resting_ind])
+        upper_threshold = sd * 5
+        lower_threshold = sd * 2.5
+
     candidate_events: List[CandidateEvent] = []
 
     in_event = False
@@ -289,12 +312,18 @@ def get_candidate_ripples(
     detection_channels_ca1: List[int],
     resting_ind: bool,
     sampling_rate: float,
+    detection_method: str,
 ) -> List[List[CandidateEvent]]:
     """Gets candidate ripples from a common average referenced LFP"""
     channel_idx = list(range(0, len(detection_channels_ca1)))
     return [
         detect_ripple_events(
-            channel, lfp_det_chans, detection_channels_ca1, resting_ind, sampling_rate
+            channel,
+            lfp_det_chans,
+            detection_channels_ca1,
+            resting_ind,
+            sampling_rate,
+            detection_method,
         )
         for channel in channel_idx
     ]

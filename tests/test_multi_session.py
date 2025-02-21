@@ -31,6 +31,7 @@ class Session:
     ) -> None:
         self.ripples_summary = ripples_summary
         self.clusters_info = clusters_info
+        self.sampling_rate_lfp = 2500
 
 
 def test_number_of_spikes_per_ripple_but_no_valid_clusters() -> None:

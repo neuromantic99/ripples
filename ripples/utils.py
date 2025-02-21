@@ -2,7 +2,7 @@ from collections import defaultdict
 from typing import List, TypeVar
 
 import numpy as np
-from scipy import signal, trapz
+from scipy import signal
 from matplotlib import pyplot as plt
 from scipy import signal
 
@@ -36,7 +36,7 @@ def bandpower(
         f, Pxx = signal.periodogram(lfp, fs=sampling_rate)
         ind_min = np.argmax(f > fmin) - 1
         ind_max = np.argmax(f > fmax) - 1
-        band_power = trapz(Pxx[ind_min:ind_max], f[ind_min:ind_max])
+        band_power = np.trapz(Pxx[ind_min:ind_max], f[ind_min:ind_max])
 
     return band_power
 

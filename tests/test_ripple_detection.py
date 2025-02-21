@@ -29,7 +29,7 @@ def test_get_resting_periods() -> None:
     resting_ind, speed = get_resting_periods(
         rotary_encoder, SAMPLING_RATE_LFP, max_time
     )
-    assert 90 - sum(resting_ind) / 2500 == len(rotary_encoder.time) - 2 
+    assert 90 - sum(resting_ind) / 2500 == len(rotary_encoder.time) - 2
     # max time in seconds - resting time/sampling_rate should be equivalent to the length of rotary encoder time
     # because that is the locomotion  period; I am subtracting 2 because of the binning used for resting_ind calculation
     assert resting_ind[int(41.5 * SAMPLING_RATE_LFP)] == False
@@ -294,7 +294,9 @@ def test_detect_ripple_events_basic() -> None:
         "ripples.ripple_detection.do_preprocessing_lfp_for_ripple_analysis",
         lambda data, y, z: (data[0, :], data[0, :]),
     ):
-        result = detect_ripple_events(0, data, CA1_channels, resting_ind, 2500)
+        result = detect_ripple_events(
+            0, data, CA1_channels, resting_ind, 2500, "median"
+        )
 
         assert result[0].onset == 1
         assert result[0].offset == 8
@@ -322,7 +324,9 @@ def test_detect_ripple_events_basic_two_events() -> None:
         "ripples.ripple_detection.do_preprocessing_lfp_for_ripple_analysis",
         lambda data, y, z: (data[0, :], data[0, :]),
     ):
-        result = detect_ripple_events(0, data, CA1_channels, resting_ind, 2500)
+        result = detect_ripple_events(
+            0, data, CA1_channels, resting_ind, 2500, "median"
+        )
 
         assert result[0].onset == 1
         assert result[0].offset == 8
@@ -358,7 +362,9 @@ def test_detect_ripple_events_doesnt_exceed_5x() -> None:
         lambda data, y, z: (data[0, :], data[0, :]),
     ):
 
-        result = detect_ripple_events(0, data, CA1_channels, resting_ind, 2500)
+        result = detect_ripple_events(
+            0, data, CA1_channels, resting_ind, 2500, "median"
+        )
         assert result == []
 
 
@@ -382,7 +388,7 @@ def test_detect_ripple_events_bounces_on_upper() -> None:
         lambda data, y, z: (data[0, :], data[0, :]),
     ):
         result = detect_ripple_events(
-            0, data, CA1_channels, resting_ind, 2500
+            0, data, CA1_channels, resting_ind, 2500, "median"
         )  # need lower sampling rate if not ripple frequency to high and code throws an error
 
         assert result[0].onset == 1
@@ -410,7 +416,9 @@ def test_detect_ripple_events_bounces_on_lower() -> None:
         "ripples.ripple_detection.do_preprocessing_lfp_for_ripple_analysis",
         lambda data, y, z: (data[0, :], data[0, :]),
     ):
-        result = detect_ripple_events(0, data, CA1_channels, resting_ind, 2500)
+        result = detect_ripple_events(
+            0, data, CA1_channels, resting_ind, 2500, "median"
+        )
 
         assert result[0].onset == 3
         assert result[0].offset == 6
@@ -438,7 +446,9 @@ def test_detect_ripple_events_jumps_to_upper() -> None:
         "ripples.ripple_detection.do_preprocessing_lfp_for_ripple_analysis",
         lambda data, y, z: (data[0, :], data[0, :]),
     ):
-        result = detect_ripple_events(0, data, CA1_channels, resting_ind, 2500)
+        result = detect_ripple_events(
+            0, data, CA1_channels, resting_ind, 2500, "median"
+        )
 
         assert result[0].onset == 0
         assert result[0].offset == 4
@@ -465,7 +475,9 @@ def test_detect_ripple_events_ends_during_ripple() -> None:
         "ripples.ripple_detection.do_preprocessing_lfp_for_ripple_analysis",
         lambda data, y, z: (data[0, :], data[0, :]),
     ):
-        result = detect_ripple_events(0, data, CA1_channels, resting_ind, 2500)
+        result = detect_ripple_events(
+            0, data, CA1_channels, resting_ind, 2500, "median"
+        )
 
         assert result[0].onset == 2 + 30
         assert result[0].offset == 4 + 30
@@ -497,7 +509,9 @@ def test_detect_ripple_events_starts_during_ripple() -> None:
         "ripples.ripple_detection.do_preprocessing_lfp_for_ripple_analysis",
         lambda data, y, z: (data[0, :], data[0, :]),
     ):
-        result = detect_ripple_events(0, data, CA1_channels, resting_ind, 2500)
+        result = detect_ripple_events(
+            0, data, CA1_channels, resting_ind, 2500, "median"
+        )
         assert result[0].onset == 0
         assert result[0].offset == 3
         assert result[0].peak_idx == 0
@@ -537,7 +551,7 @@ def test_get_candidate_ripple() -> None:
         lambda data, sampling_rate, channel: (data[channel, :], data[channel, :]),
     ):
         result = get_candidate_ripples(
-            data, CA1_channels, resting_ind, SAMPLING_RATE_LFP
+            data, CA1_channels, resting_ind, SAMPLING_RATE_LFP, "median"
         )
 
         assert len(result) == len(CA1_channels)
@@ -631,7 +645,9 @@ def test_do_preprocessing_lfp_for_ripple_analysis() -> None:
     )  # need to mimic an array with at leat two channels for the code to work
 
     sm_envelope, _ = do_preprocessing_lfp_for_ripple_analysis(data, 2500, 0)
-    m = io.loadmat(Path(HERE.parent / "matlab" / "matlab_comparison_ripple_detection.mat"))
+    m = io.loadmat(
+        Path(HERE.parent / "matlab" / "matlab_comparison_ripple_detection.mat")
+    )
 
     testing.assert_allclose(
         m["data_m"][:, 1000:21500], data[1, 1000:21500].reshape(1, 20500)
@@ -647,7 +663,13 @@ def test_do_preprocessing_lfp_for_ripple_analysis() -> None:
 
 def test_do_preprocessing_lfp_for_ripple_analysis_real_ripple() -> None:
 
-    m = io.loadmat(Path(HERE.parent / "matlab" / "matlab_comparison_ripple_detection_real_ripple.mat"))
+    m = io.loadmat(
+        Path(
+            HERE.parent
+            / "matlab"
+            / "matlab_comparison_ripple_detection_real_ripple.mat"
+        )
+    )
 
     data = m["data_m"]
 
