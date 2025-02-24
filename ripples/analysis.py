@@ -132,8 +132,10 @@ def load_lfp(lfp_path: Path) -> Tuple[np.ndarray, np.ndarray, float]:
 
     # Chop off beginning & end of the recording without behavioural data
     rising_edges = threshold_detect(sync, 0.5)
-    assert rising_edges[4] - rising_edges[0] == 0.8 * sampling_rate_lfp
-    assert rising_edges[-1] - rising_edges[-5] == 0.8 * sampling_rate_lfp
+    assert (
+        rising_edges[4] - rising_edges[0] == 2000
+    )  # 0.8 * sampling_rate_lfp, using integer because sampling rate is sometimes slightly differing from 2500
+    assert rising_edges[-1] - rising_edges[-5] == 2000
     # sync signal consists in one 1s 5Hz pulse at the end and at the beginning of the recording, in between there is a 1Hz pulse
     # behavioural recording starts at the first rising edge of the 1s 5Hz pulse at the beginning of the recording
     recording_onset = rising_edges[0]
@@ -334,10 +336,10 @@ def calculate_speed(
     idx: int,
     bin_edges_ind: np.ndarray,
     rotary_encoder: RotaryEncoder,
-    sampling_rate: float,
+    bin_size: int,
 ) -> np.ndarray:
-    start_time = bin_edges_ind[idx] / sampling_rate
-    end_time = bin_edges_ind[idx + 1] / sampling_rate
+    start_time = bin_edges_ind[idx] / bin_size
+    end_time = bin_edges_ind[idx + 1] / bin_size
     start_idx = smallest_positive_index(start_time - rotary_encoder.time)
     end_idx = smallest_positive_index(end_time - rotary_encoder.time)
     distance = rotary_encoder.position[end_idx] - rotary_encoder.position[start_idx]
@@ -346,24 +348,22 @@ def calculate_speed(
 
 
 def get_resting_periods(
-    rotary_encoder: RotaryEncoder, sampling_rate: float, max_time: float
+    rotary_encoder: RotaryEncoder, max_time: float
 ) -> Tuple[np.ndarray, np.ndarray]:
 
-    bin_size = sampling_rate
+    bin_size = 2500
     bin_edges_ind = np.arange(0, max_time, bin_size)
     speed_cm_per_s = np.array([])
 
     for idx in range(len(bin_edges_ind) - 1):
-        speed_bin = calculate_speed(idx, bin_edges_ind, rotary_encoder, sampling_rate)
-        speed_cm_per_s = np.concatenate(
-            (speed_cm_per_s, np.full(int(round(sampling_rate)), speed_bin))
-        )
+        speed_bin = calculate_speed(idx, bin_edges_ind, rotary_encoder, bin_size)
+        speed_cm_per_s = np.concatenate((speed_cm_per_s, np.full(bin_size, speed_bin)))
 
     last_idx = int(bin_edges_ind[-1])
     max_time = max_time
     if max_time > last_idx:
-        start_time = last_idx / sampling_rate
-        end_time = max_time / sampling_rate
+        start_time = last_idx / bin_size
+        end_time = max_time / bin_size
         start_idx = smallest_positive_index(start_time - np.array(rotary_encoder.time))
         end_idx = smallest_positive_index(end_time - np.array(rotary_encoder.time))
         distance = rotary_encoder.position[end_idx] - rotary_encoder.position[start_idx]
@@ -428,9 +428,7 @@ def cache_session(metadata_probe: pd.Series) -> None:
     # load rotary encoder file
     rotary_encoder = load_rotary_encoder(Path(metadata_probe["Rotary encoder path"]))
     # identify resting periods based on running speed
-    resting_ind, speed_cm_per_s = get_resting_periods(
-        rotary_encoder, sampling_rate_lfp, lfp.shape[1]
-    )
+    resting_ind, speed_cm_per_s = get_resting_periods(rotary_encoder, lfp.shape[1])
 
     resting_percentage = sum(resting_ind) / len(resting_ind)
     resting_time = sum(resting_ind) / sampling_rate_lfp
