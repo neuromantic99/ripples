@@ -360,7 +360,6 @@ def get_resting_periods(
         speed_cm_per_s = np.concatenate((speed_cm_per_s, np.full(bin_size, speed_bin)))
 
     last_idx = int(bin_edges_ind[-1])
-    max_time = max_time
     if max_time > last_idx:
         start_time = last_idx / bin_size
         end_time = max_time / bin_size
