@@ -98,55 +98,6 @@ def get_quality_metrics(
     )
 
 
-def filter_candidate_ripples(
-    candidate_events: List[List[CandidateEvent]],
-    lfp: np.ndarray,
-    common_average: np.ndarray,
-    sampling_rate: float,
-) -> List[List[CandidateEvent]]:
-
-    assert (
-        len(candidate_events) == lfp.shape[0]
-        and lfp.shape[1] == common_average.shape[0]
-    )
-
-    candidate_events = [length_check(events) for events in candidate_events]
-    print(
-        f"Number of ripples after length check: {len([event for events in candidate_events for event in events])}"
-    )
-
-    candidate_events = [frequency_check(events) for events in candidate_events]
-    print(
-        f"Number of ripples after frequency check: {len([event for events in candidate_events for event in events])}"
-    )
-
-    common_average_power = compute_envelope(
-        bandpass_filter(
-            np.expand_dims(common_average, axis=0),
-            RIPPLE_BAND[0],
-            RIPPLE_BAND[1],
-            sampling_rate,
-        )
-    )
-
-    candidate_events = [
-        event_power_check(events, common_average_power.squeeze())
-        for events in candidate_events
-    ]
-    print(
-        f"Number of ripples after CAR check: {len([event for events in candidate_events for event in events])}"
-    )
-
-    supra_ripple_band_power = compute_envelope(
-        bandpass_filter(lfp, SUPRA_RIPPLE_BAND[0], SUPRA_RIPPLE_BAND[1], sampling_rate)
-    )
-
-    return [
-        event_power_check(events, supra)
-        for events, supra in zip(candidate_events, supra_ripple_band_power)
-    ]
-
-
 def count_spikes_around_ripple(
     ripple: CandidateEvent,
     spike_times: np.ndarray,
@@ -310,7 +261,7 @@ def detect_ripple_events(
 def get_candidate_ripples(
     lfp_det_chans: np.ndarray,
     detection_channels_ca1: List[int],
-    resting_ind: bool,
+    resting_ind: np.ndarray,
     sampling_rate: float,
     detection_method: str,
 ) -> List[List[CandidateEvent]]:

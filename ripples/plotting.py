@@ -181,6 +181,7 @@ def plot_resting_ripples(
     bin_edges = np.arange(0, max_time, bin_size)
 
     speed = []
+    # TODO: use calculate_speed function
     for idx in range(len(bin_edges) - 1):
         start_time = bin_edges[idx]
         end_time = bin_edges[idx + 1]
