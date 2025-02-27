@@ -9,9 +9,15 @@ from scipy.stats import zscore
 import seaborn as sns
 
 
-from ripples.consts import SAMPLING_RATE_LFP, HERE
+from ripples.consts import HERE, RESULTS_PATH
 from ripples.models import ClusterInfo, ClusterType, RotaryEncoder, CandidateEvent
-from ripples.utils import bandpass_filter, compute_power, moving_average
+from ripples.utils import (
+    bandpass_filter,
+    compute_power,
+    moving_average,
+    smallest_positive_index,
+)
+from ripples.consts import SUPRA_RIPPLE_BAND, RIPPLE_BAND
 
 
 def plot_ripples(ripples: List[List[CandidateEvent]], filtered_lfp: np.ndarray) -> None:
@@ -76,14 +82,17 @@ def plot_ripples_against_position(
         plt.axvline(ripple.onset / sampling_rate_lfp, color="red")
 
 
-def plot_frequency_depth(lfp: np.ndarray, ax: Any | None = None) -> None:
-    lfp = lfp[:, : SAMPLING_RATE_LFP * 360]
+def plot_frequency_depth(
+    lfp: np.ndarray, sampling_rate_lfp: float, ax: Any | None = None
+) -> None:
+    ind = int(np.round(sampling_rate_lfp * 360))
+    lfp = lfp[:, :ind]
     swr_power = compute_power(
-        bandpass_filter(lfp, 125, 250, SAMPLING_RATE_LFP, order=4)
+        bandpass_filter(lfp, RIPPLE_BAND[0], RIPPLE_BAND[1], sampling_rate_lfp, order=4)
     )
     # 4th order doesn't work at these frequencies
-    theta_power = compute_power(bandpass_filter(lfp, 4, 8, SAMPLING_RATE_LFP, order=3))
-    delta_power = compute_power(bandpass_filter(lfp, 1, 3, SAMPLING_RATE_LFP, order=3))
+    theta_power = compute_power(bandpass_filter(lfp, 4, 8, sampling_rate_lfp, order=3))
+    delta_power = compute_power(bandpass_filter(lfp, 1, 3, sampling_rate_lfp, order=3))
     plotting_class = ax if ax is not None else plt
     plotting_class.plot(zscore(swr_power, nan_policy="omit"), label="SWR")
     plotting_class.plot(zscore(theta_power, nan_policy="omit"), label="Theta")
@@ -102,12 +111,14 @@ def plot_channel_depth_profile(
     region_channel: List[str],
     clusters_info: List[ClusterInfo],
     recording_id: str,
+    CA1_channels: List[int],
+    sampling_rate_lfp: float,
 ) -> None:
 
     fig, ax1 = plt.subplots()
     ax2 = ax1.twinx()
 
-    plot_frequency_depth(lfp, ax1)
+    plot_frequency_depth(lfp, sampling_rate_lfp, ax1)
 
     n_spikes_per_channel = [0] * 384
     for cluster in clusters_info:
@@ -143,19 +154,66 @@ def plot_channel_depth_profile(
     for position in plot_xlabels.values():
         plt.axvline(position[0], color="black", linestyle="--")
         plt.axvline(position[2], color="black", linestyle="--")
+    plt.axvline(min(CA1_channels), color="red", linestyle="--")
+    plt.axvline(max(CA1_channels), color="red", linestyle="--")
     ax1.legend()
     ax2.legend(loc="center right")
 
-    figure_path = HERE.parent / "figures" / "depth_profiles"
+    figure_path = RESULTS_PATH / "figures" / "depth_profiles"
     if not figure_path.exists():
         os.makedirs(figure_path)
 
     plt.savefig(figure_path / f"{recording_id}_depth_profile.png")
 
 
-def plot_lfp_spectrogram(lfp: np.ndarray, recording_id: str) -> None:
+def plot_resting_ripples(
+    rotary_encoder: RotaryEncoder,
+    max_time: float,
+    ripples: List[CandidateEvent],
+    resting_ind: np.array,
+    speed_cm_per_s: np.array,
+    sampling_rate: float,
+    recording_id: str,
+) -> None:
+
+    bin_size = 1
+    max_time = max_time / sampling_rate
+    bin_edges = np.arange(0, max_time, bin_size)
+
+    speed = []
+    # TODO: use calculate_speed function
+    for idx in range(len(bin_edges) - 1):
+        start_time = bin_edges[idx]
+        end_time = bin_edges[idx + 1]
+        start_idx = smallest_positive_index(start_time - rotary_encoder.time)
+        end_idx = smallest_positive_index(end_time - rotary_encoder.time)
+        distance = rotary_encoder.position[end_idx] - rotary_encoder.position[start_idx]
+        speed.append(distance / (end_time - start_time))
+
+    speed = np.array(speed)
+
+    onset_times = [ripple.onset for ripple in ripples]
+    onset_times_in_sec = [x / sampling_rate for x in onset_times]
+    y_vec = np.ones(len(ripples))
+
+    plt.figure()
+    plt.plot(speed_cm_per_s[0:-1:2500])
+    plt.plot(resting_ind[0:-1:2500])
+    plt.scatter(onset_times_in_sec, y_vec)
+
+    figure_path = RESULTS_PATH / "figures" / "Resting_ripples"
+    if not figure_path.exists():
+        os.makedirs(figure_path)
+
+    plt.savefig(figure_path / f"{recording_id}_resting_ripples.png")
+
+
+def plot_lfp_spectrogram(
+    lfp: np.ndarray, recording_id: str, sampling_rate_lfp: float
+) -> None:
     result = []
-    lfp = lfp[:, : SAMPLING_RATE_LFP * 180]
+    ind = int(np.round(sampling_rate_lfp * 180))
+    lfp = lfp[:, :ind]
 
     max_freq = 550
     edges = (
@@ -169,7 +227,7 @@ def plot_lfp_spectrogram(lfp: np.ndarray, recording_id: str) -> None:
         end = edges[idx + 1]
 
         result.append(
-            compute_power(bandpass_filter(lfp, start, end, SAMPLING_RATE_LFP, order=3))
+            compute_power(bandpass_filter(lfp, start, end, sampling_rate_lfp, order=3))
         )
 
     result = np.array(result).T
@@ -187,7 +245,7 @@ def plot_lfp_spectrogram(lfp: np.ndarray, recording_id: str) -> None:
     plt.xlabel("Frequency (Hz)")
     plt.ylabel("Channel")
 
-    figure_path = HERE.parent / "figures" / "lfp_spectrograms"
+    figure_path = RESULTS_PATH / "figures" / "lfp_spectrograms"
     if not figure_path.exists():
         os.makedirs(figure_path)
 

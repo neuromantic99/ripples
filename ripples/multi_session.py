@@ -1,25 +1,230 @@
 from pathlib import Path
 from typing import List, Tuple
+import os
 
 import numpy as np
 import seaborn as sns
 from matplotlib import pyplot as plt
 from scipy.stats import zscore
 
-from ripples.consts import HERE, SAMPLING_RATE_LFP
+from ripples.consts import HERE, RIPPLE_BAND, RESULTS_PATH
 from ripples.models import ClusterType, Session, SessionToAverage
-from ripples.utils import mean_across_same_session
+
+from ripples.utils import mean_across_same_session, bandpass_filter, compute_envelope
+import pywt
+from scipy import signal
+
 
 sns.set_theme(context="talk", style="ticks")
 
 
-RESULTS_PATH = HERE.parent / "results"
+def plot_ripple_raw(WTs: List[Session], NLGFs: List[Session]) -> None:
+
+    for rec in range(len(WTs)):
+        idx = range(len(WTs[rec].ripples_summary.events))
+        for n in idx:
+            if not WTs[rec].ripples_summary.events[n]:
+                continue
+            else:
+                raw = np.array(WTs[rec].ripples_summary.events[n].raw_lfp)
+                raw = raw[2000:-2000]
+                filtered = bandpass_filter(
+                    raw.reshape(1, len(raw)),
+                    RIPPLE_BAND[0],
+                    RIPPLE_BAND[1],
+                    WTs[rec].sampling_rate_lfp,
+                )
+                envelope = signal.savgol_filter(compute_envelope(filtered), 101, 4)
+                filtered = filtered.reshape(filtered.shape[1], 1)
+                envelope = envelope.reshape(envelope.shape[1], 1)
+
+                all_data = np.hstack((filtered, envelope))
+
+                fig, axs = plt.subplots(3, 1, sharex=True)
+                time = range(-500, 500, 1)
+
+                fs = WTs[rec].sampling_rate_lfp
+                w = 10.0
+                freq = np.linspace(1, fs / 2, 100)
+                widths = w * fs / (2 * freq * np.pi)
+                cwtm, freqs = pywt.cwt(raw, widths, "cmor2.5-1.5")
+                axs[0].pcolormesh(
+                    time,
+                    freqs[0:50] * WTs[rec].sampling_rate_lfp,
+                    np.abs(cwtm[0:50, :]),
+                    cmap="viridis",
+                    shading="gouraud",
+                )
+                axs[0].axhline(RIPPLE_BAND[0], color="red", linestyle="-")
+                axs[0].axhline(RIPPLE_BAND[1], color="red", linestyle="-")
+                font = {"size": 10}
+                axs[0].set_title(
+                    f"freq_check: {WTs[rec].ripples_summary.ripple_freq_check[n]};CAR_check:{WTs[rec].ripples_summary.ripple_CAR_check[n]};SRP_check:{WTs[rec].ripples_summary.ripple_SRP_check[n]};CAR_check_lr:{WTs[rec].ripples_summary.ripple_CAR_check_lr[n]};SRP_check_lr:{WTs[rec].ripples_summary.ripple_SRP_check_lr[n]}",
+                    fontdict=font,
+                )
+
+                onset_time = WTs[rec].ripples_summary.events[n].onset
+                offset_time = WTs[rec].ripples_summary.events[n].offset
+                peak_time = WTs[rec].ripples_summary.events[n].peak_idx
+
+                # Plot each graph, and manually set the y tick values
+                axs[1].plot(time, raw, linewidth=0.5)
+                axs[2].plot(time, all_data, linewidth=0.5)
+                axs[2].axvline((onset_time - peak_time), color="red", linestyle="-")
+                axs[2].axvline((offset_time - peak_time), color="red", linestyle="-")
+                axs[2].set_xlabel("time (ms)")
+                axs[2].set_title(
+                    f"onset: {onset_time/WTs[rec].sampling_rate_lfp}", fontdict=font
+                )
+
+                figure_path = (
+                    RESULTS_PATH / "figures" / "ripples" / f"{WTs[rec].id}" / f"{rec}"
+                )
+                if not figure_path.exists():
+                    os.makedirs(figure_path)
+
+                plt.savefig(figure_path / f"ripple_{n}.png")
+                plt.close(fig)
+
+                ripple = raw[
+                    (500 + onset_time - peak_time) : (500 + offset_time - peak_time)
+                ]
+                [f, Pxx] = signal.periodogram(ripple, WTs[rec].sampling_rate_lfp)
+                max_idx = np.argmax(Pxx.reshape(len(f), 1).tolist())
+                max_freq = f[max_idx]
+                max_val = (Pxx.reshape(len(f), 1)).tolist()[max_idx]
+                max_val = max_val[0]
+                ev_freq = WTs[rec].ripples_summary.events[n].frequency
+                peaks, prominence = signal.find_peaks(Pxx, height=0.25 * max_val)
+                plt.figure()
+                plt.plot(f, Pxx.reshape(len(f), 1))
+                plt.plot(max_freq, max_val, "ro")
+                plt.plot(f[peaks], Pxx[peaks], "bx")
+                font = {"size": 10}
+                plt.title(
+                    f"Peak frequencies: {f[peaks]}; Ripple frequency: {ev_freq}",
+                    fontdict=font,
+                )
+                figure_path = (
+                    RESULTS_PATH
+                    / "figures"
+                    / "ripples_freq_spectrum"
+                    / f"{WTs[rec].id}"
+                    / f"{rec}"
+                )
+                if not figure_path.exists():
+                    os.makedirs(figure_path)
+
+                plt.savefig(figure_path / f"ripple_{n}.png")
+                plt.close()
+
+    for rec in range(len(NLGFs)):
+        idx = range(len(NLGFs[rec].ripples_summary.events))
+        for n in idx:
+            if not NLGFs[rec].ripples_summary.events[n]:
+                continue
+            else:
+                raw = np.array(NLGFs[rec].ripples_summary.events[n].raw_lfp)
+                raw = raw[2000:-2000]
+                filtered = bandpass_filter(
+                    raw.reshape(1, len(raw)),
+                    RIPPLE_BAND[0],
+                    RIPPLE_BAND[1],
+                    NLGFs[rec].sampling_rate_lfp,
+                )
+                envelope = signal.savgol_filter(compute_envelope(filtered), 101, 4)
+                filtered = filtered.reshape(filtered.shape[1], 1)
+                envelope = envelope.reshape(envelope.shape[1], 1)
+
+                all_data = np.hstack((filtered, envelope))
+
+                fig, axs = plt.subplots(3, 1, sharex=True)
+                time = range(-500, 500, 1)
+
+                fs = NLGFs[rec].sampling_rate_lfp
+                w = 10.0
+                freq = np.linspace(1, fs / 2, 100)
+                widths = w * fs / (2 * freq * np.pi)
+                cwtm, freqs = pywt.cwt(raw, widths, "cmor2.5-1.5")
+                axs[0].pcolormesh(
+                    time,
+                    freqs[0:50] * NLGFs[rec].sampling_rate_lfp,
+                    np.abs(cwtm[0:50, :]),
+                    cmap="viridis",
+                    shading="gouraud",
+                )
+                axs[0].axhline(RIPPLE_BAND[0], color="red", linestyle="-")
+                axs[0].axhline(RIPPLE_BAND[1], color="red", linestyle="-")
+                font = {"size": 10}
+                axs[0].set_title(
+                    f"freq_check: {NLGFs[rec].ripples_summary.ripple_freq_check[n]};CAR_check:{NLGFs[rec].ripples_summary.ripple_CAR_check[n]};SRP_check:{NLGFs[rec].ripples_summary.ripple_SRP_check[n]};CAR_check_lr:{NLGFs[rec].ripples_summary.ripple_CAR_check_lr[n]};SRP_check_lr:{NLGFs[rec].ripples_summary.ripple_SRP_check_lr[n]}",
+                    fontdict=font,
+                )
+
+                onset_time = NLGFs[rec].ripples_summary.events[n].onset
+                offset_time = NLGFs[rec].ripples_summary.events[n].offset
+                peak_time = NLGFs[rec].ripples_summary.events[n].peak_idx
+
+                # Plot each graph, and manually set the y tick values
+                axs[1].plot(time, raw, linewidth=0.5)
+                axs[2].plot(time, all_data, linewidth=0.5)
+                axs[2].axvline((onset_time - peak_time), color="red", linestyle="-")
+                axs[2].axvline((offset_time - peak_time), color="red", linestyle="-")
+                axs[2].set_xlabel("time (ms)")
+                axs[2].set_title(
+                    f"onset: {onset_time/NLGFs[rec].sampling_rate_lfp}", fontdict=font
+                )
+
+                figure_path = (
+                    RESULTS_PATH / "figures" / "ripples" / f"{NLGFs[rec].id}" / f"{rec}"
+                )
+                if not figure_path.exists():
+                    os.makedirs(figure_path)
+
+                plt.savefig(figure_path / f"ripple_{n}.png")
+                plt.close(fig)
+
+                ripple = raw[
+                    (500 + onset_time - peak_time) : (500 + offset_time - peak_time)
+                ]
+                [f, Pxx] = signal.periodogram(ripple, NLGFs[rec].sampling_rate_lfp)
+                max_idx = np.argmax(Pxx.reshape(len(f), 1).tolist())
+                max_freq = f[max_idx]
+                max_val = (Pxx.reshape(len(f), 1)).tolist()[max_idx]
+                max_val = max_val[0]
+                ev_freq = NLGFs[rec].ripples_summary.events[n].frequency
+                peaks, prominence = signal.find_peaks(Pxx, height=0.25 * max_val)
+                plt.figure()
+                plt.plot(f, Pxx.reshape(len(f), 1))
+                plt.plot(max_freq, max_val, "ro")
+                plt.plot(f[peaks], Pxx[peaks], "bx")
+                font = {"size": 10}
+                plt.title(
+                    f"Peak frequencies: {f[peaks]}; Ripple frequency: {ev_freq}",
+                    fontdict=font,
+                )
+                figure_path = (
+                    RESULTS_PATH
+                    / "figures"
+                    / "ripples_freq_spectrum"
+                    / f"{NLGFs[rec].id}"
+                    / f"{rec}"
+                )
+                if not figure_path.exists():
+                    os.makedirs(figure_path)
+
+                plt.savefig(figure_path / f"ripple_{n}.png")
+                plt.close()
 
 
 def number_of_spikes_per_cell_per_ripple(session: Session) -> float:
     """Follows the Tonegawa approach: pubmed.ncbi.nlm.nih.gov/24139046/"""
     all_ripple_times = np.array(
-        [event.peak_idx / SAMPLING_RATE_LFP for event in session.ripples_summary.events]
+        [
+            event.peak_idx / session.sampling_rate_lfp
+            for event in session.ripples_summary.events
+            if event
+        ]
     )
 
     spikes_per_ripple = np.zeros(len(session.clusters_info))
@@ -90,7 +295,10 @@ def get_ripple_rate(session: Session) -> float:
         session.length_seconds * session.ripples_summary.resting_percentage
     )
 
-    return len(session.ripples_summary.ripple_power) / resting_seconds
+    return (
+        len([event.peak_idx for event in session.ripples_summary.events if event])
+        / resting_seconds
+    )
 
 
 def resting_time_ripple_rate_correlation(
@@ -173,13 +381,22 @@ def number_of_ripples_plot(WTs: List[Session], NLGFs: List[Session]) -> None:
     plt.savefig(HERE.parent / "figures" / "resting_ripple_rate.png")
 
 
-def ripple_power_plot(WTs: List[Session], NLGFs: List[Session]) -> None:
+# TODO: add in statistics
+
+
+def ripple_amplitude_plot(WTs: List[Session], NLGFs: List[Session]) -> None:
 
     wt_data = mean_across_same_session(
         [
             SessionToAverage(
                 remove_month_from_session_id(session.id),
-                np.mean(session.ripples_summary.ripple_power).astype(float),
+                np.mean(
+                    [
+                        event.peak_amplitude
+                        for event in session.ripples_summary.events
+                        if event
+                    ]
+                ).astype(float),
             )
             for session in WTs
         ]
@@ -189,7 +406,13 @@ def ripple_power_plot(WTs: List[Session], NLGFs: List[Session]) -> None:
         [
             SessionToAverage(
                 remove_month_from_session_id(session.id),
-                np.mean(session.ripples_summary.ripple_power).astype(float),
+                np.mean(
+                    [
+                        event.peak_amplitude
+                        for event in session.ripples_summary.events
+                        if event
+                    ]
+                ).astype(float),
             )
             for session in NLGFs
         ]
@@ -199,9 +422,95 @@ def ripple_power_plot(WTs: List[Session], NLGFs: List[Session]) -> None:
     sns.stripplot({"WTs": wt_data, "NLGFs": nlgf_data})
     sns.boxplot({"WTs": wt_data, "NLGFs": nlgf_data}, showfliers=False)
     plt.ylim(0, 40)
-    plt.ylabel(r"Ripple power ( $\mu$V)")
+    plt.ylabel(r"Ripple Amplitude ( $\mu$V)")
     plt.tight_layout()
-    plt.savefig(HERE.parent / "figures" / "resting_ripple_power.png")
+    plt.savefig(HERE.parent / "figures" / "resting_ripple_amplitude.png")
+
+
+def ripple_freq_plot(WTs: List[Session], NLGFs: List[Session]) -> None:
+
+    wt_data = mean_across_same_session(
+        [
+            SessionToAverage(
+                remove_month_from_session_id(session.id),
+                np.mean(
+                    [
+                        event.frequency
+                        for event in session.ripples_summary.events
+                        if event
+                    ]
+                ).astype(float),
+            )
+            for session in WTs
+        ]
+    )
+
+    nlgf_data = mean_across_same_session(
+        [
+            SessionToAverage(
+                remove_month_from_session_id(session.id),
+                np.mean(
+                    [
+                        event.frequency
+                        for event in session.ripples_summary.events
+                        if event
+                    ]
+                ).astype(float),
+            )
+            for session in NLGFs
+        ]
+    )
+
+    plt.figure()
+    sns.stripplot({"WTs": wt_data, "NLGFs": nlgf_data})
+    sns.boxplot({"WTs": wt_data, "NLGFs": nlgf_data}, showfliers=False)
+    plt.ylim(0, 250)
+    plt.ylabel(r"Ripple frequency ( $\mu$V)")
+    plt.tight_layout()
+    plt.savefig(HERE.parent / "figures" / "resting_ripple_frequency.png")
+
+
+def ripple_bandpower_plot(WTs: List[Session], NLGFs: List[Session]) -> None:
+
+    wt_data = mean_across_same_session(
+        [
+            SessionToAverage(
+                remove_month_from_session_id(session.id),
+                np.mean(
+                    [
+                        event.bandpower_ripple
+                        for event in session.ripples_summary.events
+                        if event
+                    ]
+                ).astype(float),
+            )
+            for session in WTs
+        ]
+    )
+
+    nlgf_data = mean_across_same_session(
+        [
+            SessionToAverage(
+                remove_month_from_session_id(session.id),
+                np.mean(
+                    [
+                        event.bandpower_ripple
+                        for event in session.ripples_summary.events
+                        if event
+                    ]
+                ).astype(float),
+            )
+            for session in NLGFs
+        ]
+    )
+
+    plt.figure()
+    sns.stripplot({"WTs": wt_data, "NLGFs": nlgf_data})
+    sns.boxplot({"WTs": wt_data, "NLGFs": nlgf_data}, showfliers=False)
+    plt.ylim(0, 250)
+    plt.ylabel(r"Ripple bandpower ( $\mu$V)")
+    plt.tight_layout()
+    plt.savefig(HERE.parent / "figures" / "resting_ripple_bandpower.png")
 
 
 def smooth_ripple_triggered_average(
@@ -214,7 +523,7 @@ def smooth_ripple_triggered_average(
 
 def process_ripple_triggered_average_session(session: List[List[int]]) -> np.ndarray:
     """The error in the mean needs to be considered here"""
-    stacked_trials = np.vstack(session)
+    stacked_trials = np.vstack([s for s in session if s])
 
     # Removed for now for simplicity
     stacked_trials = smooth_ripple_triggered_average(stacked_trials, 2)
@@ -319,6 +628,36 @@ def plot_grand_ripple_triggered_average(
     plt.savefig(HERE.parent / "figures" / "ripple_triggered_spikes.png")
 
 
+def filter_ripples(
+    WTs: List[Session], NLGFs: List[Session]
+) -> tuple[List[Session], List[Session]]:
+
+    for session in range(len(WTs)):
+        for n in range(len(WTs[session].ripples_summary.ripple_SRP_check)):
+            if (
+                np.array(WTs[session].ripples_summary.ripple_SRP_check[n])
+                * np.array(WTs[session].ripples_summary.ripple_CAR_check_lr[n])
+                * np.array(WTs[session].ripples_summary.ripple_freq_check[n])
+            ) == False:
+                WTs[session].ripples_summary.events[n] = []
+                WTs[session].ripples_summary.dentate[n] = []
+                WTs[session].ripples_summary.ca1[n] = []
+                WTs[session].ripples_summary.retrosplenial[n] = []
+
+    for session in range(len(NLGFs)):
+        for n in range(len(NLGFs[session].ripples_summary.ripple_SRP_check)):
+            if (
+                np.array(NLGFs[session].ripples_summary.ripple_SRP_check[n])
+                * np.array(NLGFs[session].ripples_summary.ripple_CAR_check_lr[n])
+                * np.array(NLGFs[session].ripples_summary.ripple_freq_check[n])
+            ) == False:
+                NLGFs[session].ripples_summary.events[n] = []
+                NLGFs[session].ripples_summary.dentate[n] = []
+                NLGFs[session].ripples_summary.ca1[n] = []
+                NLGFs[session].ripples_summary.retrosplenial[n] = []
+    return WTs, NLGFs
+
+
 def load_sessions() -> Tuple[List[Session], List[Session]]:
 
     results_files = Path(RESULTS_PATH).glob("*.json")
@@ -327,11 +666,19 @@ def load_sessions() -> Tuple[List[Session], List[Session]]:
 
     for file in results_files:
 
-        if "3M" not in file.name and "4M" not in file.name:
+        if (
+            "3M" not in file.name
+            and "4M" not in file.name
+            and "5M" not in file.name
+            and "A" not in file.name
+        ):
             continue
 
         with open(file) as f:
             result = Session.model_validate_json(f.read())
+
+        if not result.ripples_summary.ripple_amplitude:
+            continue
 
         if "wt" in file.name.lower():
             WTs.append(result)
@@ -346,13 +693,18 @@ def load_sessions() -> Tuple[List[Session], List[Session]]:
 def main() -> None:
 
     WTs, NLGFs = load_sessions()
+    filter_ripples(WTs, NLGFs)
+    #plot_ripple_raw(WTs, NLGFs)
+
+    plot_grand_ripple_triggered_average(WTs, NLGFs)
 
     spikes_per_ripple(WTs, NLGFs)
-    # number_of_ripples_plot(WTs, NLGFs)
+    number_of_ripples_plot(WTs, NLGFs)
 
-    # ripple_power_plot(WTs, NLGFs)
+    ripple_amplitude_plot(WTs, NLGFs)
+    ripple_freq_plot(WTs, NLGFs)
+    ripple_bandpower_plot(WTs, NLGFs)
     # plot_grand_ripple_triggered_average(WTs, NLGFs)
-    # time_spent_resting_plot(WTs, NLGFs)
-    # # resting_time_ripple_rate_correlation(WTs, NLGFs)
-
+    time_spent_resting_plot(WTs, NLGFs)
+    resting_time_ripple_rate_correlation(WTs, NLGFs)
     plt.show()

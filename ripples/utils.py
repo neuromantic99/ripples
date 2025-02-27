@@ -3,15 +3,69 @@ from typing import List, TypeVar
 
 import numpy as np
 from scipy import signal
+from matplotlib import pyplot as plt
+from scipy import signal
 
 from ripples.models import SessionToAverage
 
 
 def bandpass_filter(
-    lfp: np.ndarray, low: float, high: float, sampling_rate: int, order: int = 4
+    lfp: np.ndarray, low: float, high: float, sampling_rate: float, order: int = 4
 ) -> np.ndarray:
     b, a = signal.butter(order, Wn=[low, high], fs=sampling_rate, btype="bandpass")
     return signal.filtfilt(b, a, lfp, axis=1)
+
+
+# adapted from https://www.askpython.com/python-modules/pandas/comparing-bandpower-matlab-python-numpy
+# still needs adjustments
+def bandpower(
+    lfp: np.ndarray, sampling_rate: float, fmin: int, fmax: int, method: str
+) -> float:
+    if method == "welch":
+        freqrange = [fmin, fmax]
+        frequencies, psd = signal.welch(
+            lfp, sampling_rate, nperseg=sampling_rate, scaling="density"
+        )
+        freq_indices = np.where(
+            (frequencies >= freqrange[0]) & (frequencies <= freqrange[1])
+        )
+        band_power = np.trapz(
+            psd.reshape(np.size(psd))[freq_indices], frequencies[freq_indices]
+        )
+    elif method == "periodogram":
+        f, Pxx = signal.periodogram(lfp, fs=sampling_rate)
+        ind_min = np.argmax(f > fmin) - 1
+        ind_max = np.argmax(f > fmax) - 1
+        band_power = np.trapz(Pxx[ind_min:ind_max], f[ind_min:ind_max])
+
+    return band_power
+
+
+def get_event_frequency(
+    lfp: np.ndarray, sampling_rate: float, plot: bool = False
+) -> float:
+    [f, Pxx] = signal.periodogram(lfp, fs=sampling_rate)
+    max_idx = np.argmax(Pxx.reshape(len(f), 1).tolist())
+    max_freq = f[max_idx]
+    max_val = (Pxx.reshape(len(f), 1)).tolist()[max_idx]
+    max_val = max_val[0]
+    peaks, _ = signal.find_peaks(Pxx, height=0.25 * max_val)
+    if list(peaks):
+        peaks_freq = np.array(f[peaks])
+        if sum(peaks_freq > 100) == 1:
+            ev_freq = peaks_freq[peaks_freq > 100]
+        elif sum(peaks_freq > 100) == 0:
+            ev_freq = peaks_freq[np.argmax(Pxx[peaks])]
+        elif sum(peaks_freq > 100) > 1:
+            Pxx = np.array(Pxx)
+            ev_freq = peaks_freq[Pxx[peaks] == max(Pxx[peaks[peaks_freq > 100]])]
+
+        return float(ev_freq)
+    else:
+        print(
+            "Ripple event with frequency peak at the border of the spectrum - will be excluded"
+        )
+        return 1
 
 
 def compute_envelope(lfp: np.ndarray) -> np.ndarray:
@@ -65,7 +119,7 @@ def compute_power(filtered_data: np.ndarray) -> np.ndarray:
     Returns:
     - power: ndarray (n_channels,), average power in each channel
 
-    TODO: IS THIS CORRECT?
+    This is approximately the same as matlab bandpower It is approximately the same as matlab
     """
     return np.mean(filtered_data**2, axis=1)
 

@@ -7,10 +7,10 @@ from ripples.utils import threshold_detect
 """Put the npyx import into its own file as it confuses pytest"""
 
 
-def load_lfp_npyx(data_path: str) -> Tuple[np.ndarray, np.ndarray]:
+def load_lfp_npyx(data_path: str) -> Tuple[np.ndarray, np.ndarray, float]:
     meta = read_metadata(data_path)
     sync = get_npix_sync(data_path, output_binary=True, filt_key="lowpass")
-
+    sampling_rate_lfp = meta["lowpass"]["sampling_rate"]
     # For some reason this is a matrix where the 6th element is the sync signal.
     # check this is the case for all recordings
     assert np.sum(sync[:, 6]) > 0
@@ -27,9 +27,12 @@ def load_lfp_npyx(data_path: str) -> Tuple[np.ndarray, np.ndarray]:
 
     lfp = extract_rawChunk(
         data_path,
-        [0, int(meta["recording_length_seconds"])],
+        [
+            0,
+            (meta["recording_length_seconds"]),
+        ],  # now taking the recording length as a float
         channels=np.arange(384),
-        filt_key="lowpass",
+        filt_key="lowpass",  # NPX data is devided in "high-pass" = spiking data and "low-pass" = LFP, no filter is being applied
         save=0,
         whiten=0,
         med_sub=False,
@@ -46,4 +49,6 @@ def load_lfp_npyx(data_path: str) -> Tuple[np.ndarray, np.ndarray]:
         scale=False,
         again=False,
     )
-    return lfp, sync
+
+    assert (len(sync) == lfp.shape[1]) | (len(sync) == (lfp.shape[1] + 1))
+    return lfp, sync, sampling_rate_lfp

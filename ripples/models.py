@@ -24,16 +24,28 @@ class ClusterInfo:
 class CandidateEvent(BaseModel):
     onset: int
     offset: int
-    peak_power: int | float
+    peak_amplitude: int | float
     peak_idx: int
+    frequency: float
+    bandpower_ripple: float
+    detection_channel: int
+    raw_lfp: List[float]
 
 
 class RipplesSummary(BaseModel):
     retrosplenial: List[List[int]]
     dentate: List[List[int]]
     ca1: List[List[int]]
-    ripple_power: List[float]
+    ripple_amplitude: List[float]
+    ripple_frequency: List[float]
+    ripple_bandpower: List[float]
+    ripple_freq_check: List[bool]
+    ripple_CAR_check: List[bool]
+    ripple_SRP_check: List[bool]
+    ripple_CAR_check_lr: List[bool]
+    ripple_SRP_check_lr: List[bool]
     resting_percentage: float
+    resting_time: float
     events: List[CandidateEvent]
 
 
@@ -49,6 +61,9 @@ class Session(BaseModel):
     id: str
     length_seconds: float
     rms_per_channel: List[float]
+    sampling_rate_lfp: float
+    CA1_channels_analysed: List[int]
+    CA1_channels_swr_pow: List[float]
 
 
 class ProbeCoordinate(BaseModel):

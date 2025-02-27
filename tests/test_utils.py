@@ -1,6 +1,58 @@
 import numpy as np
+from pathlib import Path
+from numpy import testing
+from scipy import io
 
-from ripples.utils import bandpass_filter, forward_fill, mean_across_same_session
+from ripples.utils import (
+    bandpass_filter,
+    forward_fill,
+    mean_across_same_session,
+    get_event_frequency,
+    bandpower,
+)
+
+from ripples.consts import HERE
+
+
+def test_bandpower() -> None:
+    t = np.arange(0, 1, 1 / 2500)
+    x = (
+        np.sin(2 * np.pi * 130 * t)
+        + 0.5 * np.sin(2 * np.pi * 50 * t)
+        + 0.5 * np.sin(2 * np.pi * 180 * t)
+    )
+    pow = bandpower(x, 2500, 120, 150, "welch")
+    expected_pow = 0.5  # calculated using the matlab bandpower function 'pow= bandpower(x,2500,[120 150]);'
+    testing.assert_allclose(pow, expected_pow)
+
+
+def test_bandpower_real_ripple() -> None:
+    m = io.loadmat(
+        Path(
+            HERE.parent
+            / "matlab"
+            / "matlab_comparison_ripple_detection_real_ripple.mat"
+        )
+    )
+
+    data = m["data_m"]
+    data = data.reshape(6500)
+
+    pow = bandpower(data[3249:3331], 2500, 80, 250, "welch")
+    expected_pow = 1.664419112875033e03  # calculated using the matlab bandpower function 'pow= bandpower(data,2500,[80 250]);'
+    testing.assert_allclose(pow, expected_pow, rtol=0.1, atol=100)
+
+
+def test_get_event_frequency() -> None:
+    t = np.arange(0, 1, 1 / 1000)
+    test_data = (
+        np.sin(2 * np.pi * 120 * t)
+        + 0.5 * np.sin(2 * np.pi * 50 * t)
+        + 0.5 * np.sin(2 * np.pi * 160 * t)
+    )
+    f = get_event_frequency(test_data, 1000)
+    expected_f = 120
+    assert f == expected_f
 
 
 def test_butterworth() -> None:
