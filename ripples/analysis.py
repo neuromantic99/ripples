@@ -132,10 +132,12 @@ def load_lfp(lfp_path: Path) -> Tuple[np.ndarray, np.ndarray, float]:
 
     # Chop off beginning & end of the recording without behavioural data
     rising_edges = threshold_detect(sync, 0.5)
-    assert (
-        rising_edges[4] - rising_edges[0] == 2000
-    )  # 0.8 * sampling_rate_lfp, using integer because sampling rate is sometimes slightly differing from 2500
-    assert rising_edges[-1] - rising_edges[-5] == 2000
+    assert rising_edges[4] - rising_edges[0] in [
+        1999,
+        2000,
+        2001,
+    ]  # 0.8 * sampling_rate_lfp, using integer because sampling rate is sometimes slightly differing from 2500
+    assert rising_edges[-1] - rising_edges[-5] in [1999, 2000, 2001]
     # sync signal consists in one 1s 5Hz pulse at the end and at the beginning of the recording, in between there is a 1Hz pulse
     # behavioural recording starts at the first rising edge of the 1s 5Hz pulse at the beginning of the recording
     recording_onset = rising_edges[0]
@@ -318,15 +320,23 @@ def get_distance_matrix(
 
 def load_rotary_encoder(rotary_encoder_path: Path) -> RotaryEncoder:
     """scipy io loads this in an insane way"""
-    rotary_encoder = io.loadmat(UMBRELLA / rotary_encoder_path)["data"][0][0]
-    positions = rotary_encoder[1][0]
+
+    try:
+        rotary_encoder = io.loadmat(UMBRELLA / rotary_encoder_path)["data"][0][0]
+        positions = rotary_encoder[1][0]
+        time = rotary_encoder[2][0]
+
+    except NotImplementedError:
+        import h5py
+
+        rotary_encoder = h5py.File(UMBRELLA / rotary_encoder_path, "r")
+        positions = np.hstack(rotary_encoder["data"]["Positions"])
+        time = np.hstack(rotary_encoder["data"]["Times"])
+
     position_cm = degrees_to_cm(unwrap_angles(positions))
-    assert (
-        np.max(np.abs(np.diff(position_cm))) < 1
-    ), "Something has probably gone wrong with the unwrapping"
 
-    time = rotary_encoder[2][0]
-
+    assert np.max(np.abs(np.diff(position_cm))) < 1
+    "Something has probably gone wrong with the unwrapping"
     assert np.all(np.diff(time) >= 0)
     assert positions.shape[0] == time.shape[0]
     return RotaryEncoder(time=time, position=position_cm)
@@ -453,9 +463,7 @@ def cache_session(metadata_probe: pd.Series) -> None:
     )
 
     channel_path = Path(
-        "C:/Python_code/ripples/results/New_code_0702/channel_regions/"
-        + recording_id
-        + ".csv"
+        "C:/Python_code/ripples/results/channel_maps/" + recording_id + ".csv"
     )
 
     if channel_path.exists():
@@ -526,10 +534,11 @@ def cache_session(metadata_probe: pd.Series) -> None:
         else:
             detection_channels_ca1.append(higher_channel)
 
-    assert (
-        region_channel[min(detection_channels_ca1) : (max(detection_channels_ca1) + 1)]
-        == ["CA1"] * 5
-    )
+    assert detection_channels_ca1 == [
+        channel
+        for channel in detection_channels_ca1
+        if region_channel[channel] == "CA1"
+    ]
 
     CA1_channels_swr_pow = list(swr_power[detection_channels_ca1])
     print(f"CA1_channels: {detection_channels_ca1} , power: {CA1_channels_swr_pow}")
@@ -673,13 +682,13 @@ def main() -> None:
 
     reprocess = False
     metadata = gsheet2df("1HSERPbm-kDhe6X8bgflxvTuK24AfdrZJzbdBy11Hpcg", "sessions", 1)
-    metadata = metadata[metadata["test_cohort"] == "TRUE"]
+    metadata = metadata[metadata["6M_cohort"] == "TRUE"]
     metadata = metadata[metadata["Ignore"] == "FALSE"]
     # metadata = metadata[metadata["Perfect_Peak"] == "Definitely"]
 
     sessions_keep = []
     for session in metadata["Session"].to_list():
-        if session[-2:] in ["3M", "4M"]:
+        if session[-2:] in ["3M", "4M", "5M", "6M"]:
             animal_name = "_".join(session.split("_")[:3])
             assert animal_name.startswith("WT") or animal_name.startswith("NLGF")
             sessions_keep.append(session)

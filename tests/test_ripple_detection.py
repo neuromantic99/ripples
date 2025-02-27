@@ -27,7 +27,7 @@ def test_get_resting_periods() -> None:
     rotary_encoder.time = [10, 11, 12, 13, 41, 41.5, 42, 85, 86, 87]
     max_time = 90 * 2500
     resting_ind, speed = get_resting_periods(
-        rotary_encoder, SAMPLING_RATE_LFP, max_time
+        rotary_encoder, max_time
     )
     assert 90 - sum(resting_ind) / 2500 == len(rotary_encoder.time) - 2
     # max time in seconds - resting time/sampling_rate should be equivalent to the length of rotary encoder time
@@ -572,7 +572,7 @@ def test_get_resting_periods_2() -> None:
 
     # Threshold below the minimum speed, max_time larger than the time array
     resting_ind, speed = get_resting_periods(
-        rotary_encoder, SAMPLING_RATE_LFP, max_time=5 * SAMPLING_RATE_LFP
+        rotary_encoder, max_time= (5 * SAMPLING_RATE_LFP)
     )
     result = sum(resting_ind) / len(resting_ind)
     assert result == 0.0
@@ -586,7 +586,7 @@ def test_get_resting_periods_all_rest() -> None:
 
     # Threshold above the maximum speed (speed is 0 everywhere)
     resting_ind, speed = get_resting_periods(
-        rotary_encoder, SAMPLING_RATE_LFP, max_time=5 * SAMPLING_RATE_LFP
+        rotary_encoder, max_time=5 * SAMPLING_RATE_LFP
     )
     result = sum(resting_ind) / len(resting_ind)
     assert int(result) == 1, "Expected all resting period"
@@ -600,7 +600,7 @@ def test_get_resting_periods_resting_mixed() -> None:
     rotary_encoder.position = np.array([0, 0, 0, 1, 2, 4])
 
     resting_ind, speed = get_resting_periods(
-        rotary_encoder, SAMPLING_RATE_LFP, max_time=5 * SAMPLING_RATE_LFP
+        rotary_encoder, max_time=5 * SAMPLING_RATE_LFP
     )
     result = sum(resting_ind) / len(resting_ind)
     assert result == 0.4  # previously set to 0.8 but I think 0.4 is correct
@@ -614,7 +614,7 @@ def test_get_resting_periods_resting_at_end() -> None:
     max_time = 10 * SAMPLING_RATE_LFP
 
     resting_ind, speed = get_resting_periods(
-        rotary_encoder, SAMPLING_RATE_LFP, max_time
+        rotary_encoder, max_time
     )
     result = sum(resting_ind) / len(resting_ind)
     # Does not include the max time itself which maybe is not the correct behaviour but
