@@ -287,7 +287,7 @@ def detect_ripple_events(
                 raw_lfp = []
 
             # only detect resting ripples
-            if sum(resting_ind[start_event:idx]) == (idx - start_event):
+            np.all(resting_ind[start_event:idx]):
                 candidate_events.append(
                     CandidateEvent(
                         onset=start_event,
