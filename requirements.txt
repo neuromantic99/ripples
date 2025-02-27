@@ -13,3 +13,4 @@ nptyping
 imageio
 napari[all]
 npyx
+PyWavelets
