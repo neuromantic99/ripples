@@ -119,7 +119,7 @@ def compute_power(filtered_data: np.ndarray) -> np.ndarray:
     Returns:
     - power: ndarray (n_channels,), average power in each channel
 
-    TODO: IS THIS CORRECT?
+    This is approximately the same as matlab bandpower It is approximately the same as matlab
     """
     return np.mean(filtered_data**2, axis=1)
 
