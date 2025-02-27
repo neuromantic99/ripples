@@ -398,30 +398,6 @@ def load_channel_regions(channel_path: Path) -> List[str]:
         return list(reader)[0]
 
 
-def map_channels_to_regions_existing_mat_file(
-    metadata_probe: pd.DataFrame,
-) -> List[str]:
-    probe_details_path = metadata_probe["Probe Details Path"].values[0]
-    try:
-        mat_file = mat73.loadmat(UMBRELLA / probe_details_path)
-        probe_details = mat_file["probe_details"]
-        region_channel = [
-            region[0] if region[0] is not None else "None"
-            for region in probe_details["alignedregions"]
-        ]
-    except TypeError:
-        mat_file = io.loadmat(UMBRELLA / probe_details_path)
-        # Scipy loads this in a cracked out way
-        regions = mat_file["probe_details"]["alignedregions"][0][0]
-        region_channel = [
-            region[0][0] if len(region[0][0]) > 0 else "None" for region in regions
-        ]
-
-    # I think the channels are reversed relative to the probe according to Jana's code.
-    # Checked with plotting
-    return list(reversed(region_channel))
-
-
 def cache_session(metadata_probe: pd.Series) -> None:
 
     # load and preprocess LFP
