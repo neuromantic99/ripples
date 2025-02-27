@@ -549,14 +549,8 @@ def cache_session(metadata_probe: pd.Series) -> None:
         f"Number of ripples before filtering: {len([event for events in candidate_events for event in events])}"
     )
 
-    # ripples_channels = filter_candidate_ripples(
-    #     candidate_events, lfp_detection_chans_CAR, common_average, SAMPLING_RATE_LFP
-    # )
-
-    ripples_channels = candidate_events
-
     # Flattening makes further processing easier
-    ripples = [event for events in ripples_channels for event in events]
+    ripples = [event for events in candidate_events for event in events]
 
     print(f"Number of ripples after filtering: {len(ripples)}")
 
