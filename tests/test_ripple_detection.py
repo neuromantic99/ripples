@@ -21,22 +21,6 @@ from ripples.consts import SAMPLING_RATE_LFP, HERE
 MIN_DISTANCE = 0.01 * SAMPLING_RATE_LFP  # 10 ms
 
 
-def test_get_resting_periods() -> None:
-    rotary_encoder = MagicMock()
-    rotary_encoder.position = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
-    rotary_encoder.time = [10, 11, 12, 13, 41, 41.5, 42, 85, 86, 87]
-    max_time = 90 * 2500
-    resting_ind, speed = get_resting_periods(
-        rotary_encoder, max_time
-    )
-    assert 90 - sum(resting_ind) / 2500 == len(rotary_encoder.time) - 2
-    # max time in seconds - resting time/sampling_rate should be equivalent to the length of rotary encoder time
-    # because that is the locomotion  period; I am subtracting 2 because of the binning used for resting_ind calculation
-    assert resting_ind[int(41.5 * SAMPLING_RATE_LFP)] == False
-    assert resting_ind[int(85 * SAMPLING_RATE_LFP)] == False
-    assert resting_ind[int(9 * SAMPLING_RATE_LFP)] == True
-
-
 def test_no_duplicates() -> None:
     ripples = [
         CandidateEvent(
@@ -563,6 +547,29 @@ def test_get_candidate_ripple() -> None:
         assert result[1][0].peak_idx == 4
 
 
+def test_get_resting_periods() -> None:
+    rotary_encoder = MagicMock()
+    rotary_encoder.position = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    rotary_encoder.time = [10, 11, 12, 13, 41, 41.5, 42, 85, 86, 87]
+    max_time = 90 * 2500
+    resting_ind, speed = get_resting_periods(rotary_encoder, max_time)
+    assert 90 - sum(resting_ind) / 2500 == len(rotary_encoder.time) - 2
+    # max time in seconds - resting time/sampling_rate should be equivalent to the length of rotary encoder time
+    # because that is the locomotion  period; I am subtracting 2 because of the binning used for resting_ind calculation
+
+    assert np.all(
+        np.logical_not(resting_ind[10 * SAMPLING_RATE_LFP : 13 * SAMPLING_RATE_LFP])
+    )
+    assert np.all(
+        np.logical_not(resting_ind[41 * SAMPLING_RATE_LFP : 42 * SAMPLING_RATE_LFP])
+    )
+
+    assert np.all(
+        np.logical_not(resting_ind[85 * SAMPLING_RATE_LFP : 87 * SAMPLING_RATE_LFP])
+    )
+    assert resting_ind[int(9 * SAMPLING_RATE_LFP)] == True
+
+
 # Test 1: Test with normal speed data and no rest periods
 def test_get_resting_periods_2() -> None:
     # Mock RotaryEncoder with increasing position over time
@@ -572,7 +579,20 @@ def test_get_resting_periods_2() -> None:
 
     # Threshold below the minimum speed, max_time larger than the time array
     resting_ind, speed = get_resting_periods(
-        rotary_encoder, max_time= (5 * SAMPLING_RATE_LFP)
+        rotary_encoder, max_time=(5 * SAMPLING_RATE_LFP)
+    )
+    result = sum(resting_ind) / len(resting_ind)
+    assert result == 0.0
+
+
+def test_get_resting_periods_max_time_greater_than_bin_edge() -> None:
+    # Mock RotaryEncoder with increasing position over time
+    rotary_encoder = MagicMock()
+    rotary_encoder.time = np.array([0, 1, 2, 3, 4, 5, 5.5])
+    rotary_encoder.position = np.array([0, 1, 2, 3, 4, 5, 6])
+    # Threshold below the minimum speed, max_time larger than the time array
+    resting_ind, speed = get_resting_periods(
+        rotary_encoder, max_time=(5.5 * SAMPLING_RATE_LFP)
     )
     result = sum(resting_ind) / len(resting_ind)
     assert result == 0.0
@@ -603,7 +623,7 @@ def test_get_resting_periods_resting_mixed() -> None:
         rotary_encoder, max_time=5 * SAMPLING_RATE_LFP
     )
     result = sum(resting_ind) / len(resting_ind)
-    assert result == 0.4  # previously set to 0.8 but I think 0.4 is correct
+    assert result == 0.4
 
 
 def test_get_resting_periods_resting_at_end() -> None:
@@ -613,9 +633,7 @@ def test_get_resting_periods_resting_at_end() -> None:
     rotary_encoder.position = np.array([0, 10, 20, 30, 40, 50])
     max_time = 10 * SAMPLING_RATE_LFP
 
-    resting_ind, speed = get_resting_periods(
-        rotary_encoder, max_time
-    )
+    resting_ind, speed = get_resting_periods(rotary_encoder, max_time)
     result = sum(resting_ind) / len(resting_ind)
     # Does not include the max time itself which maybe is not the correct behaviour but
     # won't make a difference
