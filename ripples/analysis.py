@@ -30,7 +30,6 @@ from ripples.plotting import (
 )
 from ripples.ripple_detection import (
     count_spikes_around_ripple,
-    filter_candidate_ripples,
     get_candidate_ripples,
     remove_duplicate_ripples,
     get_quality_metrics,

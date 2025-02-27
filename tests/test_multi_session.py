@@ -2,7 +2,6 @@ from typing import List
 import pytest
 import numpy as np
 
-from ripples.consts import SAMPLING_RATE_LFP
 from ripples.models import ClusterType
 from ripples.multi_session import number_of_spikes_per_cell_per_ripple
 
@@ -49,8 +48,8 @@ def test_number_of_spikes_per_ripple_but_no_valid_clusters() -> None:
 def test_number_of_spikes_per_ripple_with_one_valid_cluster() -> None:
     # Simulate ripples and one valid cluster with spikes within ripple windows
     ripples = [
-        Event(peak_idx=1000 * SAMPLING_RATE_LFP),
-        Event(peak_idx=2000 * SAMPLING_RATE_LFP),
+        Event(peak_idx=1000 * 2500),
+        Event(peak_idx=2000 * 2500),
     ]
     spikes = [999.8, 1000.1, 2000.29]  # Some spikes are within 300 ms of ripple peaks
     clusters = [Cluster(info=ClusterType.GOOD, region="CA1", spike_times=spikes)]
@@ -62,8 +61,8 @@ def test_number_of_spikes_per_ripple_with_one_valid_cluster() -> None:
 def test_number_of_spikes_per_ripple_with_multiple_valid_clusters() -> None:
     # Simulate ripples and multiple valid clusters
     ripples = [
-        Event(peak_idx=1000 * SAMPLING_RATE_LFP),
-        Event(peak_idx=2000 * SAMPLING_RATE_LFP),
+        Event(peak_idx=1000 * 2500),
+        Event(peak_idx=2000 * 2500),
     ]
     spikes1 = [999.9, 1000.1, 2000.27, 2000.32]  # 3 in ripples
     spikes2 = [999.9, 2000.1, 2000.28, 2000.31]  # 3 in ripples

@@ -171,7 +171,7 @@ def detect_ripple_events(
     channel: int,
     lfp_det_chans: np.ndarray,
     detection_channels_ca1: List[int],
-    resting_ind: bool,
+    resting_ind: np.ndarray,
     sampling_rate: float,
     method: str,
 ) -> List[CandidateEvent]:
@@ -238,7 +238,7 @@ def detect_ripple_events(
                 raw_lfp = []
 
             # only detect resting ripples
-           if np.all(resting_ind[start_event:idx]):
+            if np.all(resting_ind[start_event:idx]):
                 candidate_events.append(
                     CandidateEvent(
                         onset=start_event,

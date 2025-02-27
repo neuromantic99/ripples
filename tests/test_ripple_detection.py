@@ -16,9 +16,9 @@ from ripples.utils import get_event_frequency
 
 from unittest.mock import MagicMock, patch
 
-from ripples.consts import SAMPLING_RATE_LFP, HERE
+from ripples.consts import HERE
 
-MIN_DISTANCE = 0.01 * SAMPLING_RATE_LFP  # 10 ms
+MIN_DISTANCE = 0.01 * 2500  # 10 ms
 
 
 def test_no_duplicates() -> None:
@@ -27,7 +27,7 @@ def test_no_duplicates() -> None:
             onset=0,
             offset=10,
             peak_amplitude=1.0,
-            peak_idx=10 * SAMPLING_RATE_LFP,
+            peak_idx=10 * 2500,
             frequency=1,
             bandpower_ripple=1,
             detection_channel=1,
@@ -37,7 +37,7 @@ def test_no_duplicates() -> None:
             onset=20,
             offset=30,
             peak_amplitude=2.0,
-            peak_idx=50 * SAMPLING_RATE_LFP,
+            peak_idx=50 * 2500,
             frequency=1,
             bandpower_ripple=1,
             detection_channel=1,
@@ -47,7 +47,7 @@ def test_no_duplicates() -> None:
             onset=40,
             offset=50,
             peak_amplitude=3.0,
-            peak_idx=100 * SAMPLING_RATE_LFP,
+            peak_idx=100 * 2500,
             frequency=1,
             bandpower_ripple=1,
             detection_channel=1,
@@ -55,7 +55,7 @@ def test_no_duplicates() -> None:
         ),
     ]
     result = remove_duplicate_ripples(
-        ripples, min_distance_seconds=MIN_DISTANCE, sampling_rate_lfp=SAMPLING_RATE_LFP
+        ripples, min_distance_seconds=MIN_DISTANCE, sampling_rate_lfp=2500
     )
     assert len(result) == 3
 
@@ -66,7 +66,7 @@ def test_with_duplicates() -> None:
             onset=0,
             offset=10,
             peak_amplitude=1.0,
-            peak_idx=10 * SAMPLING_RATE_LFP,
+            peak_idx=10 * 2500,
             frequency=1,
             bandpower_ripple=1,
             detection_channel=1,
@@ -76,7 +76,7 @@ def test_with_duplicates() -> None:
             onset=20,
             offset=30,
             peak_amplitude=2.0,
-            peak_idx=12 * SAMPLING_RATE_LFP,
+            peak_idx=12 * 2500,
             frequency=1,
             bandpower_ripple=1,
             detection_channel=1,
@@ -86,7 +86,7 @@ def test_with_duplicates() -> None:
             onset=40,
             offset=50,
             peak_amplitude=3.0,
-            peak_idx=100 * SAMPLING_RATE_LFP,
+            peak_idx=100 * 2500,
             frequency=1,
             bandpower_ripple=1,
             detection_channel=1,
@@ -96,7 +96,7 @@ def test_with_duplicates() -> None:
     result = remove_duplicate_ripples(
         ripples,
         min_distance_seconds=MIN_DISTANCE,
-        sampling_rate_lfp=SAMPLING_RATE_LFP,
+        sampling_rate_lfp=2500,
     )
     assert len(result) == 2
     assert result[0].peak_amplitude == 2.0
@@ -137,7 +137,7 @@ def test_all_duplicates() -> None:
         ),
     ]
     result = remove_duplicate_ripples(
-        ripples, min_distance_seconds=MIN_DISTANCE, sampling_rate_lfp=SAMPLING_RATE_LFP
+        ripples, min_distance_seconds=MIN_DISTANCE, sampling_rate_lfp=2500
     )
     assert len(result) == 1
     assert result[0].peak_amplitude == 1.0
@@ -177,7 +177,7 @@ def test_all_duplicates_end_highest() -> None:
         ),
     ]
     result = remove_duplicate_ripples(
-        ripples, min_distance_seconds=MIN_DISTANCE, sampling_rate_lfp=SAMPLING_RATE_LFP
+        ripples, min_distance_seconds=MIN_DISTANCE, sampling_rate_lfp=2500
     )
     assert len(result) == 1
     assert result[0].peak_amplitude == 8
@@ -190,7 +190,7 @@ def test_all_duplicates_end_highest() -> None:
 #         CandidateEvent(onset=2, offset=12, peak_amplitude=1.0, peak_idx=120),
 #         CandidateEvent(onset=4, offset=14, peak_amplitude=1.0, peak_idx=140),
 #     ]
-#     result = remove_duplicate_ripples(ripples, sampling_rate_lfp=SAMPLING_RATE_LFP)
+#     result = remove_duplicate_ripples(ripples, sampling_rate_lfp=2500)
 #     assert len(result) == 1
 #     assert result[0].peak_amplitude == 1.0
 #     assert result[0].peak_idx == 100
@@ -202,7 +202,7 @@ def test_multiple_duplicates() -> None:
             onset=0,
             offset=10,
             peak_amplitude=1.0,
-            peak_idx=SAMPLING_RATE_LFP * 100,
+            peak_idx=2500 * 100,
             frequency=1,
             bandpower_ripple=1,
             detection_channel=1,
@@ -212,7 +212,7 @@ def test_multiple_duplicates() -> None:
             onset=5,
             offset=15,
             peak_amplitude=10,
-            peak_idx=SAMPLING_RATE_LFP * 109,
+            peak_idx=2500 * 109,
             frequency=1,
             bandpower_ripple=1,
             detection_channel=1,
@@ -222,7 +222,7 @@ def test_multiple_duplicates() -> None:
             onset=6,
             offset=16,
             peak_amplitude=1.5,
-            peak_idx=SAMPLING_RATE_LFP * 110,
+            peak_idx=2500 * 110,
             frequency=1,
             bandpower_ripple=1,
             detection_channel=1,
@@ -232,7 +232,7 @@ def test_multiple_duplicates() -> None:
             onset=15,
             offset=25,
             peak_amplitude=1,
-            peak_idx=SAMPLING_RATE_LFP * 200,
+            peak_idx=2500 * 200,
             frequency=1,
             bandpower_ripple=1,
             detection_channel=1,
@@ -242,7 +242,7 @@ def test_multiple_duplicates() -> None:
             onset=16,
             offset=26,
             peak_amplitude=5,
-            peak_idx=SAMPLING_RATE_LFP * 205,
+            peak_idx=2500 * 205,
             frequency=1,
             bandpower_ripple=1,
             detection_channel=1,
@@ -251,7 +251,7 @@ def test_multiple_duplicates() -> None:
     ]
 
     result = remove_duplicate_ripples(
-        ripples, min_distance_seconds=MIN_DISTANCE, sampling_rate_lfp=SAMPLING_RATE_LFP
+        ripples, min_distance_seconds=MIN_DISTANCE, sampling_rate_lfp=2500
     )
 
     assert len(result) == 2
@@ -534,9 +534,7 @@ def test_get_candidate_ripple() -> None:
         "ripples.ripple_detection.do_preprocessing_lfp_for_ripple_analysis",
         lambda data, sampling_rate, channel: (data[channel, :], data[channel, :]),
     ):
-        result = get_candidate_ripples(
-            data, CA1_channels, resting_ind, SAMPLING_RATE_LFP, "median"
-        )
+        result = get_candidate_ripples(data, CA1_channels, resting_ind, 2500, "median")
 
         assert len(result) == len(CA1_channels)
         assert len(result[0]) == 2
@@ -557,17 +555,11 @@ def test_get_resting_periods() -> None:
     # max time in seconds - resting time/sampling_rate should be equivalent to the length of rotary encoder time
     # because that is the locomotion  period; I am subtracting 2 because of the binning used for resting_ind calculation
 
-    assert np.all(
-        np.logical_not(resting_ind[10 * SAMPLING_RATE_LFP : 13 * SAMPLING_RATE_LFP])
-    )
-    assert np.all(
-        np.logical_not(resting_ind[41 * SAMPLING_RATE_LFP : 42 * SAMPLING_RATE_LFP])
-    )
+    assert np.all(np.logical_not(resting_ind[10 * 2500 : 13 * 2500]))
+    assert np.all(np.logical_not(resting_ind[41 * 2500 : 42 * 2500]))
 
-    assert np.all(
-        np.logical_not(resting_ind[85 * SAMPLING_RATE_LFP : 87 * SAMPLING_RATE_LFP])
-    )
-    assert resting_ind[int(9 * SAMPLING_RATE_LFP)] == True
+    assert np.all(np.logical_not(resting_ind[85 * 2500 : 87 * 2500]))
+    assert resting_ind[int(9 * 2500)] == True
 
 
 # Test 1: Test with normal speed data and no rest periods
@@ -578,9 +570,7 @@ def test_get_resting_periods_2() -> None:
     rotary_encoder.position = np.array([0, 1, 2, 3, 4, 5])
 
     # Threshold below the minimum speed, max_time larger than the time array
-    resting_ind, speed = get_resting_periods(
-        rotary_encoder, max_time=(5 * SAMPLING_RATE_LFP)
-    )
+    resting_ind, speed = get_resting_periods(rotary_encoder, max_time=(5 * 2500))
     result = sum(resting_ind) / len(resting_ind)
     assert result == 0.0
 
@@ -591,9 +581,7 @@ def test_get_resting_periods_max_time_greater_than_bin_edge() -> None:
     rotary_encoder.time = np.array([0, 1, 2, 3, 4, 5, 5.5])
     rotary_encoder.position = np.array([0, 1, 2, 3, 4, 5, 6])
     # Threshold below the minimum speed, max_time larger than the time array
-    resting_ind, speed = get_resting_periods(
-        rotary_encoder, max_time=(5.5 * SAMPLING_RATE_LFP)
-    )
+    resting_ind, speed = get_resting_periods(rotary_encoder, max_time=(5.5 * 2500))
     result = sum(resting_ind) / len(resting_ind)
     assert result == 0.0
 
@@ -605,9 +593,7 @@ def test_get_resting_periods_all_rest() -> None:
     rotary_encoder.position = np.array([0, 0, 0, 0, 0, 0])
 
     # Threshold above the maximum speed (speed is 0 everywhere)
-    resting_ind, speed = get_resting_periods(
-        rotary_encoder, max_time=5 * SAMPLING_RATE_LFP
-    )
+    resting_ind, speed = get_resting_periods(rotary_encoder, max_time=5 * 2500)
     result = sum(resting_ind) / len(resting_ind)
     assert int(result) == 1, "Expected all resting period"
 
@@ -619,9 +605,7 @@ def test_get_resting_periods_resting_mixed() -> None:
     rotary_encoder.time = np.array([0, 1, 2, 3, 4, 5])
     rotary_encoder.position = np.array([0, 0, 0, 1, 2, 4])
 
-    resting_ind, speed = get_resting_periods(
-        rotary_encoder, max_time=5 * SAMPLING_RATE_LFP
-    )
+    resting_ind, speed = get_resting_periods(rotary_encoder, max_time=5 * 2500)
     result = sum(resting_ind) / len(resting_ind)
     assert result == 0.4
 
@@ -631,7 +615,7 @@ def test_get_resting_periods_resting_at_end() -> None:
     rotary_encoder = MagicMock()
     rotary_encoder.time = np.array([0, 1, 2, 3, 4, 5])
     rotary_encoder.position = np.array([0, 10, 20, 30, 40, 50])
-    max_time = 10 * SAMPLING_RATE_LFP
+    max_time = 10 * 2500
 
     resting_ind, speed = get_resting_periods(rotary_encoder, max_time)
     result = sum(resting_ind) / len(resting_ind)

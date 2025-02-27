@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 from scipy.stats import zscore
 import mat73
 
-from ripples.consts import HERE, SAMPLING_RATE_LFP
+from ripples.consts import HERE, 2500
 from ripples.utils import bandpass_filter, compute_envelope, compute_power
 from ripples.utils_npyx import load_lfp_npyx
 
@@ -24,10 +24,10 @@ def cache_lfp() -> None:
 
 def plot_frequencies_over_time(lfp: np.ndarray, channels: Iterable[int]) -> None:
 
-    lfp = lfp[:, int(SAMPLING_RATE_LFP * 44.7) :]
+    lfp = lfp[:, int(2500 * 44.7) :]
 
-    window_size = 3 * SAMPLING_RATE_LFP
-    step = int(0.1 * SAMPLING_RATE_LFP)
+    window_size = 3 * 2500
+    step = int(0.1 * 2500)
     theta = []
     delta = []
     slow_wave = []
@@ -44,27 +44,27 @@ def plot_frequencies_over_time(lfp: np.ndarray, channels: Iterable[int]) -> None
         data = lfp[channels, window_start : window_start + window_size]
 
         # theta.append(
-        #     compute_envelope(bandpass_filter(data, 4, 8, SAMPLING_RATE_LFP)).mean()
+        #     compute_envelope(bandpass_filter(data, 4, 8, 2500)).mean()
         # )
         # delta.append(
-        #     compute_envelope(bandpass_filter(data, 1, 3, SAMPLING_RATE_LFP)).mean()
+        #     compute_envelope(bandpass_filter(data, 1, 3, 2500)).mean()
         # )
         slow_wave.append(
-            compute_envelope(bandpass_filter(data, 0.5, 4, SAMPLING_RATE_LFP)).mean()
+            compute_envelope(bandpass_filter(data, 0.5, 4, 2500)).mean()
         )
         # high_gamma.append(
-        #     compute_envelope(bandpass_filter(data, 100, 250, SAMPLING_RATE_LFP)).mean()
+        #     compute_envelope(bandpass_filter(data, 100, 250, 2500)).mean()
         # )
 
         # sigma.append(
-        #     compute_envelope(bandpass_filter(data, 10, 15, SAMPLING_RATE_LFP)).mean()
+        #     compute_envelope(bandpass_filter(data, 10, 15, 2500)).mean()
         # )
 
     # plt.plot(zscore(np.array(theta) / np.array(delta)), label="Theta / Delta")
     # plt.plot(zscore(delta), label="Delta")
     # plt.plot(norm(moving_average(np.array(theta), 5)), label="Theta")
     # x_axis = np.arange(
-    #     0, len(theta) * window_size / SAMPLING_RATE_LFP, window_size / SAMPLING_RATE_LFP
+    #     0, len(theta) * window_size / 2500, window_size / 2500
     # )
     slow_wave = zscore(np.array(slow_wave))
     # plt.plot(x_axis, zscore(np.array(high_gamma)), label="high gamma")
@@ -106,12 +106,12 @@ def main() -> None:
 # theta_band = np.zeros(n_channels)
 # delta_band = np.zeros_like(lfp)
 
-# window = 1 * SAMPLING_RATE_LFP
+# window = 1 * 2500
 
 # for channel in range(n_channels):
 
 #     for w
-#     theta_band[channel] = bandpass_filter(lfp[channel, :], 4, 8, SAMPLING_RATE_LFP)
+#     theta_band[channel] = bandpass_filter(lfp[channel, :], 4, 8, 2500)
 #     delta_band[channel, :] = bandpass_filter(
-#         lfp[channel, :], 1, 4, SAMPLING_RATE_LFP
+#         lfp[channel, :], 1, 4, 2500
 #     )
