@@ -3,16 +3,14 @@ from numpy import testing
 from scipy import io
 from pathlib import Path
 
-from ripples.models import CandidateEvent, RotaryEncoder
+from ripples.models import CandidateEvent
 from ripples.ripple_detection import (
     detect_ripple_events,
     remove_duplicate_ripples,
     do_preprocessing_lfp_for_ripple_analysis,
     get_candidate_ripples,
 )
-from ripples.analysis import get_resting_periods, calculate_speed
-
-from ripples.utils import get_event_frequency
+from ripples.analysis import get_resting_periods
 
 from unittest.mock import MagicMock, patch
 

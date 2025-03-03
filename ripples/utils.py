@@ -6,7 +6,7 @@ from scipy import signal
 from matplotlib import pyplot as plt
 from scipy import signal
 
-from ripples.models import SessionToAverage
+from ripples.models import SessionToAverage, SessionToAverageGU
 
 
 def bandpass_filter(
@@ -156,3 +156,20 @@ def mean_across_same_session(sessions: List[SessionToAverage]) -> List[float]:
         data_dict[session.id]["count"] += 1
 
     return [value["sum"] / value["count"] for value in data_dict.values()]
+
+
+def mean_across_sessions(sessions: List[SessionToAverageGU]) -> np.ndarray:
+
+    data_dict: defaultdict[str, dict] = defaultdict(lambda: {"sum": 0, "count": 0})
+    # Populate the dictionary with sums and counts
+    for session in sessions:
+        if data_dict[session.id]["sum"] is None:
+            data_dict[session.id]["sum"] = session.data
+        else:
+            data_dict[session.id][
+                "sum"
+            ] += session.data  # NumPy supports element-wise addition
+
+        data_dict[session.id]["count"] += 1
+
+    return np.array([value["sum"] / value["count"] for value in data_dict.values()])
