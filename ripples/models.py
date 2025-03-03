@@ -19,6 +19,7 @@ class ClusterInfo:
     info: ClusterType
     channel: int
     depth: float
+    good_cluster: bool
 
 
 class CandidateEvent(BaseModel):
@@ -33,9 +34,6 @@ class CandidateEvent(BaseModel):
 
 
 class RipplesSummary(BaseModel):
-    retrosplenial: List[List[int]]
-    dentate: List[List[int]]
-    ca1: List[List[int]]
     ripple_amplitude: List[float]
     ripple_frequency: List[float]
     ripple_bandpower: List[float]
@@ -59,9 +57,11 @@ class Session(BaseModel):
     ripples_summary: RipplesSummary
     clusters_info: List[ClusterInfo]
     id: str
+    baseline: str
     length_seconds: float
     rms_per_channel: List[float]
     sampling_rate_lfp: float
+    detection_method: str
     CA1_channels_analysed: List[int]
     CA1_channels_swr_pow: List[float]
 
@@ -78,3 +78,9 @@ class ProbeCoordinate(BaseModel):
 class SessionToAverage:
     id: str
     data: float
+
+
+@dataclass
+class SessionToAverageGU:
+    id: str
+    data: np.ndarray
