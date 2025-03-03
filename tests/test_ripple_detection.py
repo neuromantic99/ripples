@@ -3,7 +3,7 @@ from numpy import testing
 from scipy import io
 from pathlib import Path
 
-from ripples.models import CandidateEvent, RotaryEncoder
+from ripples.models import CandidateEvent
 from ripples.ripple_detection import (
     detect_ripple_events,
     remove_duplicate_ripples,

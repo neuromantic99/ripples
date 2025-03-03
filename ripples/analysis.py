@@ -46,6 +46,8 @@ from ripples.utils import (
 )
 from ripples.utils_npyx import load_lfp_npyx
 
+from ripples.process_spiking_data import get_good_unit_ids
+
 REFERENCE_CHANNEL = 191  # For the long linear, change depending on probe
 
 UMBRELLA = Path("//128.40.224.64/marcbusche/Jana/Neuropixels")
@@ -127,7 +129,7 @@ def load_lfp(lfp_path: Path) -> Tuple[np.ndarray, np.ndarray, float]:
     # The long linear channels are interleaved (confirmed by plotting)
     lfp = np.concatenate((lfp[0::2, :], lfp[1::2, :]), axis=0)
 
-    (len(sync) == lfp.shape[1]) | (len(sync) == (lfp.shape[1] + 1))
+    assert (len(sync) == lfp.shape[1]) | (len(sync) == (lfp.shape[1] + 1))
 
     # Chop off beginning & end of the recording without behavioural data
     rising_edges = threshold_detect(sync, 0.5)
@@ -190,6 +192,7 @@ def load_spikes(
 
     spike_times = np.load(UMBRELLA / kilosort_path / "spike_times.npy")
     spike_clusters = np.load(UMBRELLA / kilosort_path / "spike_clusters.npy")
+    amplitudes = np.load(UMBRELLA / kilosort_path / "amplitudes.npy")
     cluster_df = pd.read_csv(UMBRELLA / kilosort_path / "cluster_info.tsv", sep="\t")
 
     assert len(spike_times) == len(spike_clusters)
@@ -250,6 +253,9 @@ def load_spikes(
         channel_map[: n_channels // 2], channel_map[n_channels // 2 :]
     )
 
+    assert len(spike_times) == len(amplitudes) == len(spike_clusters)
+    cluster_df["good_unit"] = get_good_unit_ids(spike_clusters, amplitudes, spike_times)
+
     return [
         ClusterInfo(
             spike_times=(
@@ -263,6 +269,7 @@ def load_spikes(
                 channel_map[row["ch"]]
             ),  # Int cast as np.in64 is not json serializable
             depth=row["depth"],
+            good_cluster=row["good_unit"],
         )
         for _, row in cluster_df.iterrows()
         # A single spike doesn't make sense and it ruins the type of the class
@@ -513,6 +520,10 @@ def cache_session(metadata_probe: pd.Series) -> None:
     )
     max_powerChanCA1 = np.nanargmax(swr_power[all_CA1_channels])
 
+    if max_powerChanCA1 - 2 < 0:
+        max_powerChanCA1 = max_powerChanCA1 + 1
+        print("Detection channels moved to stay in CA1")
+
     assert max_powerChanCA1 + 3 < len(all_CA1_channels)
     assert max_powerChanCA1 - 2 >= 0
 
@@ -606,42 +617,49 @@ def cache_session(metadata_probe: pd.Series) -> None:
         "events": ripples,
     }
 
-    area_map = {"dg-": "dentate", "ca1": "ca1", "rsp": "retrosplenial"}
+    # area_map = {"dg-": "dentate", "ca1": "ca1", "rsp": "retrosplenial"}
 
-    # Identify clusters for each region and extract spikeTimes around each ripple event for each cluster
-    # TODO: Probably this is the wrong place to compute this
-    padding = 2  # in seconds
-    n_bins = 200  # 200 bins = 100 bins/second
-    for area in area_map:
+    # # Identify clusters for each region and extract spikeTimes around each ripple event for each cluster
+    # # TODO: Probably this is the wrong place to compute this
+    # padding = 2  # in seconds
+    # n_bins = 200  # 200 bins = 50 bins/second
+    # for area in area_map:
 
-        channels_keep = [
-            idx
-            for idx, region in enumerate(region_channel)
-            if region is not None and area in region.lower()
-        ]
+    #     channels_keep = [
+    #         idx
+    #         for idx, region in enumerate(region_channel)
+    #         if region is not None and area in region.lower()
+    #     ]
 
-        print(f"Number of channels in {area_map[area]}: {len(channels_keep)}")
+    #     print(f"Number of channels in {area_map[area]}: {len(channels_keep)}")
 
-        spike_times = np.hstack(
-            [
-                cluster.spike_times
-                for cluster in clusters_info
-                if cluster.channel in channels_keep
-            ]
-        )
+    #     spike_times =[
+    #             cluster.spike_times
+    #             for cluster in clusters_info
+    #             if cluster.channel in channels_keep
+    #         ]
 
-        spike_count = [
-            count_spikes_around_ripple(
-                ripple=ripple,
-                spike_times=spike_times,
-                padding=padding,
-                num_bins=n_bins,
-                sampling_rate_lfp=sampling_rate_lfp,
-            )
-            for ripple in ripples
-        ]
+    #     good_ind =[
+    #             cluster.good_cluster
+    #             for cluster in clusters_info
+    #             if cluster.channel in channels_keep
+    #         ]
 
-        ripples_summary[area_map[area]] = spike_count
+    #     spike_count = [
+    #         count_spikes_around_ripple(
+    #             ripple=ripple,
+    #             spike_times=spike_times,
+    #             padding=padding,
+    #             num_bins=n_bins,
+    #             sampling_rate_lfp=sampling_rate_lfp,
+    #         )
+    #         for ripple in ripples
+    #     ]
+
+    #     # gets saved as a List of all the ripples containing for each ripples all the binned spiketimes for each cluster in that brain regions around the ripple peak List[List[np.array]]
+    #     ripples_summary[area_map[area]] = spike_count
+    #     ripples_summary[(area_map[area] + "_good_cluster_ind")] = good_ind
+    #     assert len(spike_count[0]) == len(ripples_summary[(area_map[area] + "_good_cluster_ind")])
 
     ripples_summary["ripple_amplitude"] = [ripple.peak_amplitude for ripple in ripples]
     ripples_summary["ripple_frequency"] = [ripple.frequency for ripple in ripples]
@@ -658,9 +676,11 @@ def cache_session(metadata_probe: pd.Series) -> None:
         ripples_summary=RipplesSummary(**ripples_summary),
         clusters_info=clusters_info,
         id=metadata_probe["Session"],
+        baseline=metadata_probe["Recording Name"],
         length_seconds=lfp.shape[1] / sampling_rate_lfp,
         rms_per_channel=rms_per_channel,
         sampling_rate_lfp=sampling_rate_lfp,
+        detection_method=DETECTION_METHOD,
         CA1_channels_analysed=detection_channels_ca1,
         CA1_channels_swr_pow=CA1_channels_swr_pow,
     )
