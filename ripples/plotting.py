@@ -167,7 +167,6 @@ def plot_channel_depth_profile(
 
 
 def plot_resting_ripples(
-    rotary_encoder: RotaryEncoder,
     max_time: float,
     ripples: List[CandidateEvent],
     resting_ind: np.array,
@@ -176,22 +175,7 @@ def plot_resting_ripples(
     recording_id: str,
 ) -> None:
 
-    bin_size = 1
     max_time = max_time / sampling_rate
-    bin_edges = np.arange(0, max_time, bin_size)
-
-    speed = []
-    # TODO: use calculate_speed function
-    for idx in range(len(bin_edges) - 1):
-        start_time = bin_edges[idx]
-        end_time = bin_edges[idx + 1]
-        start_idx = smallest_positive_index(start_time - rotary_encoder.time)
-        end_idx = smallest_positive_index(end_time - rotary_encoder.time)
-        distance = rotary_encoder.position[end_idx] - rotary_encoder.position[start_idx]
-        speed.append(distance / (end_time - start_time))
-
-    speed = np.array(speed)
-
     onset_times = [ripple.onset for ripple in ripples]
     onset_times_in_sec = [x / sampling_rate for x in onset_times]
     y_vec = np.ones(len(ripples))
@@ -206,6 +190,15 @@ def plot_resting_ripples(
         os.makedirs(figure_path)
 
     plt.savefig(figure_path / f"{recording_id}_resting_ripples.png")
+
+    # more detailed plot
+    # plt.figure()
+    # xvec= range(len(resting_ind))
+    # plt.scatter(xvec,resting_ind)
+    # plt.plot(resting_ind, 'red')
+    # y_vec = np.ones(len(ripples))-0.5
+    # plt.scatter([ripple.onset for ripple in ripples], y_vec)
+    # plt.plot(speed_cm_per_s, 'green')
 
 
 def plot_lfp_spectrogram(
