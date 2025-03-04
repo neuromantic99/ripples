@@ -665,7 +665,7 @@ def test_pad_resting_ind_locomotion_in_the_middle() -> None:
     resting_ind[locomotion_period] = 0
     padding = 1250
     resting_ind_after_padding = pad_resting_ind(resting_ind, padding)
-    assert sum(resting_ind_after_padding) / len(resting_ind_after_padding) == 0.80004
+    assert sum(resting_ind_after_padding) / len(resting_ind_after_padding) == 0.8
     assert sum(resting_ind) / len(resting_ind) == 0.9
     assert len(resting_ind) == len(resting_ind)
 
@@ -676,7 +676,7 @@ def test_pad_resting_ind_locomotion_at_the_end() -> None:
     resting_ind[locomotion_period] = 0
     padding = 1250
     resting_ind_after_padding = pad_resting_ind(resting_ind, padding)
-    assert sum(resting_ind_after_padding) / len(resting_ind_after_padding) == 0.75004
+    assert sum(resting_ind_after_padding) / len(resting_ind_after_padding) == 0.75
     assert sum(resting_ind) / len(resting_ind) == 0.8
     assert len(resting_ind) == len(resting_ind)
 
@@ -691,13 +691,78 @@ def test_pad_resting_ind_simple() -> None:
 
     import matplotlib.pyplot as plt
 
-    plt.plot(resting_ind.astype(int), "o", color="red", label="before padding")
-    plt.plot(
-        resting_ind_after_padding.astype(int), ".", color="blue", label="after padding"
-    )
-    plt.legend()
-    plt.show()
-    1
+    # plt.plot(resting_ind.astype(int), "o", color="red", label="before padding")
+    # plt.plot(
+    #     resting_ind_after_padding.astype(int), ".", color="blue", label="after padding"
+    # )
+    # plt.legend()
+    # plt.show()
+
+    assert sum(resting_ind_after_padding) == 5
+    assert sum(resting_ind) == 9
+
+
+def test_pad_resting_ind_simple_locomotion_at_the_beginning() -> None:
+    resting_ind = np.ones(10)
+
+    resting_ind[1] = 0
+    padding = 2
+
+    resting_ind_after_padding = pad_resting_ind(resting_ind, padding)
+
+    import matplotlib.pyplot as plt
+
+    # plt.plot(resting_ind.astype(int), "o", color="red", label="before padding")
+    # plt.plot(
+    #     resting_ind_after_padding.astype(int), ".", color="blue", label="after padding"
+    # )
+    # plt.legend()
+    # plt.show()
+
+    assert sum(resting_ind_after_padding) == 6
+    assert sum(resting_ind) == 9
+
+
+def test_pad_resting_ind_simple_locomotion_at_the_end() -> None:
+    resting_ind = np.ones(10)
+
+    resting_ind[8] = 0
+    padding = 2
+
+    resting_ind_after_padding = pad_resting_ind(resting_ind, padding)
+
+    import matplotlib.pyplot as plt
+
+    # plt.plot(resting_ind.astype(int), "o", color="red", label="before padding")
+    # plt.plot(
+    #     resting_ind_after_padding.astype(int), ".", color="blue", label="after padding"
+    # )
+    # plt.legend()
+    # plt.show()
+
+    assert sum(resting_ind_after_padding) == 6
+    assert sum(resting_ind) == 9
+
+
+def test_pad_resting_ind_simple_locomotion_in_the_middle() -> None:
+    resting_ind = np.ones(10)
+
+    resting_ind[5] = 0
+    padding = 2
+
+    resting_ind_after_padding = pad_resting_ind(resting_ind, padding)
+
+    import matplotlib.pyplot as plt
+
+    # plt.plot(resting_ind.astype(int), "o", color="red", label="before padding")
+    # plt.plot(
+    #     resting_ind_after_padding.astype(int), ".", color="blue", label="after padding"
+    # )
+    # plt.legend()
+    # plt.show()
+
+    assert sum(resting_ind_after_padding) == 5
+    assert sum(resting_ind) == 9
 
 
 def test_do_preprocessing_lfp_for_ripple_analysis() -> None:
