@@ -356,10 +356,26 @@ def calculate_speed(
     return speed_cm_per_s
 
 
+def pad_resting_ind(resting_ind: np.ndarray, padding: int | None) -> np.ndarray:
+    if padding is not None:
+        resting_ind_after_padding = np.zeros(len(resting_ind), dtype=bool)
+        for ind in range(padding, len(resting_ind - padding)):
+            if np.all(resting_ind[(ind - padding) : (ind + padding)]):
+                resting_ind_after_padding[ind] = True
+        for ind in range(0, padding):
+            if np.all(resting_ind[0 : (ind + padding)]):
+                resting_ind_after_padding[ind] = True
+        for ind in range(len(resting_ind - padding), len(resting_ind)):
+            if np.all(resting_ind[ind - padding : len(resting_ind)]):
+                resting_ind_after_padding[ind] = True
+    elif padding is None:
+        resting_ind_after_padding = resting_ind
+    return resting_ind_after_padding
+
+
 def get_resting_periods(
     rotary_encoder: RotaryEncoder,
     max_time: float,
-    padding: int | None,
 ) -> Tuple[np.ndarray, np.ndarray]:
 
     bin_size = 2500
@@ -384,21 +400,7 @@ def get_resting_periods(
 
     assert len(speed_cm_per_s) == max_time
     resting_ind = speed_cm_per_s == 0
-
-    if padding is not None:
-        resting_ind_after_padding = np.zeros(len(resting_ind), dtype=bool)
-        for ind in range(padding, len(resting_ind - padding)):
-            if np.all(resting_ind[(ind - padding) : (ind + padding)]):
-                resting_ind_after_padding[ind] = True
-        for ind in range(0, padding):
-            if np.all(resting_ind[0 : (ind + padding)]):
-                resting_ind_after_padding[ind] = True
-        for ind in range(len(resting_ind - padding), len(resting_ind)):
-            if np.all(resting_ind[ind - padding : len(resting_ind)]):
-                resting_ind_after_padding[ind] = True
-    elif padding is None:
-        resting_ind_after_padding = resting_ind
-
+    resting_ind_after_padding = pad_resting_ind(resting_ind, 2500)
     assert len(resting_ind_after_padding) == max_time
 
     return resting_ind_after_padding, speed_cm_per_s
@@ -428,9 +430,7 @@ def cache_session(metadata_probe: pd.Series) -> None:
     # load rotary encoder file
     rotary_encoder = load_rotary_encoder(Path(metadata_probe["Rotary encoder path"]))
     # identify resting periods based on running speed
-    resting_ind, speed_cm_per_s = get_resting_periods(
-        rotary_encoder, lfp.shape[1], padding=2500
-    )
+    resting_ind, speed_cm_per_s = get_resting_periods(rotary_encoder, lfp.shape[1])
 
     resting_percentage = sum(resting_ind) / len(resting_ind)
     resting_time = sum(resting_ind) / sampling_rate_lfp

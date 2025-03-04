@@ -10,9 +10,7 @@ from ripples.ripple_detection import (
     do_preprocessing_lfp_for_ripple_analysis,
     get_candidate_ripples,
 )
-from ripples.analysis import get_resting_periods, calculate_speed
-
-from ripples.utils import get_event_frequency
+from ripples.analysis import get_resting_periods, pad_resting_ind
 
 from unittest.mock import MagicMock, patch
 
@@ -550,7 +548,11 @@ def test_get_resting_periods() -> None:
     rotary_encoder.position = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
     rotary_encoder.time = [10, 11, 12, 13, 41, 41.5, 42, 85, 86, 87]
     max_time = 90 * 2500
-    resting_ind, speed = get_resting_periods(rotary_encoder, max_time, padding=0)
+    with patch(
+        "ripples.analysis.pad_resting_ind",
+        lambda x, y: x,
+    ):
+        resting_ind, speed = get_resting_periods(rotary_encoder, max_time)
 
     assert np.round(90 - sum(resting_ind) / 2500) == len(rotary_encoder.time) - 2
     # max time in seconds - resting time/sampling_rate should be equivalent to the length of rotary encoder time
@@ -571,9 +573,12 @@ def test_get_resting_periods_2() -> None:
     rotary_encoder.position = np.array([0, 1, 2, 3, 4, 5])
 
     # Threshold below the minimum speed, max_time larger than the time array
-    resting_ind, speed = get_resting_periods(
-        rotary_encoder, max_time=(5 * 2500), padding=0
-    )
+    with patch(
+        "ripples.analysis.pad_resting_ind",
+        lambda x, y: x,
+    ):
+        resting_ind, speed = get_resting_periods(rotary_encoder, max_time=(5 * 2500))
+
     result = sum(resting_ind) / len(resting_ind)
     assert result == 0.0
 
@@ -584,9 +589,11 @@ def test_get_resting_periods_max_time_greater_than_bin_edge() -> None:
     rotary_encoder.time = np.array([0, 1, 2, 3, 4, 5, 5.5])
     rotary_encoder.position = np.array([0, 1, 2, 3, 4, 5, 6])
     # Threshold below the minimum speed, max_time larger than the time array
-    resting_ind, speed = get_resting_periods(
-        rotary_encoder, max_time=(5.5 * 2500), padding=0
-    )
+    with patch(
+        "ripples.analysis.pad_resting_ind",
+        lambda x, y: x,
+    ):
+        resting_ind, speed = get_resting_periods(rotary_encoder, max_time=(5.5 * 2500))
     result = sum(resting_ind) / len(resting_ind)
     assert result == 0.0
 
@@ -598,9 +605,11 @@ def test_get_resting_periods_all_rest() -> None:
     rotary_encoder.position = np.array([0, 0, 0, 0, 0, 0])
 
     # Threshold above the maximum speed (speed is 0 everywhere)
-    resting_ind, speed = get_resting_periods(
-        rotary_encoder, max_time=5 * 2500, padding=0
-    )
+    with patch(
+        "ripples.analysis.pad_resting_ind",
+        lambda x, y: x,
+    ):
+        resting_ind, speed = get_resting_periods(rotary_encoder, max_time=(5 * 2500))
     result = sum(resting_ind) / len(resting_ind)
     assert int(result) == 1, "Expected all resting period"
 
@@ -612,9 +621,11 @@ def test_get_resting_periods_resting_mixed() -> None:
     rotary_encoder.time = np.array([0, 1, 2, 3, 4, 5])
     rotary_encoder.position = np.array([0, 0, 0, 1, 2, 4])
 
-    resting_ind, speed = get_resting_periods(
-        rotary_encoder, max_time=5 * 2500, padding=0
-    )
+    with patch(
+        "ripples.analysis.pad_resting_ind",
+        lambda x, y: x,
+    ):
+        resting_ind, speed = get_resting_periods(rotary_encoder, max_time=(5 * 2500))
     result = sum(resting_ind) / len(resting_ind)
     assert np.round(result, decimals=1) == 0.4
 
@@ -625,8 +636,12 @@ def test_get_resting_periods_resting_at_end() -> None:
     rotary_encoder.time = np.array([0, 1, 2, 3, 4, 5])
     rotary_encoder.position = np.array([0, 10, 20, 30, 40, 50])
     max_time = 10 * 2500
+    with patch(
+        "ripples.analysis.pad_resting_ind",
+        lambda x, y: x,
+    ):
+        resting_ind, speed = get_resting_periods(rotary_encoder, max_time)
 
-    resting_ind, speed = get_resting_periods(rotary_encoder, max_time, padding=0)
     result = sum(resting_ind) / len(resting_ind)
     assert result == 0.5
 
@@ -638,11 +653,32 @@ def test_get_resting_periods_resting_at_end_with_padding() -> None:
     rotary_encoder.position = np.array([0, 10, 20, 30, 40, 50])
     max_time = 10 * 2500
 
-    resting_ind, speed = get_resting_periods(rotary_encoder, max_time, padding=1250)
+    resting_ind, speed = get_resting_periods(rotary_encoder, max_time)
     result = sum(resting_ind) / len(resting_ind)
-    # Does not include the max time itself which maybe is not the correct behaviour but
-    # won't make a difference
-    assert result == 0.45
+    # Test should pass when padding is set to 2500 in analysis.py
+    assert result == 0.4  # max time 10s, 5s resting, 1s padding
+
+
+def test_pad_resting_ind_locomotion_in_the_middle() -> None:
+    resting_ind = np.ones(10 * 2500)
+    locomotion_period = range((8 * 2500), (9 * 2500))
+    resting_ind[locomotion_period] = 0
+    padding = 1250
+    resting_ind_after_padding = pad_resting_ind(resting_ind, padding)
+    assert sum(resting_ind_after_padding) / len(resting_ind_after_padding) == 0.80004
+    assert sum(resting_ind) / len(resting_ind) == 0.9
+    assert len(resting_ind) == len(resting_ind)
+
+
+def test_pad_resting_ind_locomotion_at_the_end() -> None:
+    resting_ind = np.ones(10 * 2500)
+    locomotion_period = range((8 * 2500), (10 * 2500))
+    resting_ind[locomotion_period] = 0
+    padding = 1250
+    resting_ind_after_padding = pad_resting_ind(resting_ind, padding)
+    assert sum(resting_ind_after_padding) / len(resting_ind_after_padding) == 0.75004
+    assert sum(resting_ind) / len(resting_ind) == 0.8
+    assert len(resting_ind) == len(resting_ind)
 
 
 def test_do_preprocessing_lfp_for_ripple_analysis() -> None:

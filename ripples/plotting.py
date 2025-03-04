@@ -169,8 +169,8 @@ def plot_channel_depth_profile(
 def plot_resting_ripples(
     max_time: float,
     ripples: List[CandidateEvent],
-    resting_ind: np.array,
-    speed_cm_per_s: np.array,
+    resting_ind: np.ndarray,
+    speed_cm_per_s: np.ndarray,
     sampling_rate: float,
     recording_id: str,
 ) -> None:
@@ -181,8 +181,8 @@ def plot_resting_ripples(
     y_vec = np.ones(len(ripples))
 
     plt.figure()
-    plt.plot(speed_cm_per_s[0:-1:2500])
-    plt.plot(resting_ind[0:-1:2500])
+    plt.plot(speed_cm_per_s[::2500])
+    plt.plot(resting_ind[::2500])
     plt.scatter(onset_times_in_sec, y_vec)
 
     figure_path = RESULTS_PATH / "figures" / "Resting_ripples"
