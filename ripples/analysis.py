@@ -359,13 +359,13 @@ def calculate_speed(
 def pad_resting_ind(resting_ind: np.ndarray, padding: int | None) -> np.ndarray:
     if padding is not None:
         resting_ind_after_padding = np.zeros(len(resting_ind), dtype=bool)
-        for ind in range(padding, len(resting_ind - padding)):
+        for ind in range(padding, len(resting_ind) - padding):
             if np.all(resting_ind[(ind - padding) : (ind + padding)]):
                 resting_ind_after_padding[ind] = True
         for ind in range(0, padding):
             if np.all(resting_ind[0 : (ind + padding)]):
                 resting_ind_after_padding[ind] = True
-        for ind in range(len(resting_ind - padding), len(resting_ind)):
+        for ind in range(len(resting_ind) - padding, len(resting_ind)):
             if np.all(resting_ind[ind - padding : len(resting_ind)]):
                 resting_ind_after_padding[ind] = True
     elif padding is None:

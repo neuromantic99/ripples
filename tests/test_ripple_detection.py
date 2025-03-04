@@ -681,6 +681,25 @@ def test_pad_resting_ind_locomotion_at_the_end() -> None:
     assert len(resting_ind) == len(resting_ind)
 
 
+def test_pad_resting_ind_simple() -> None:
+    resting_ind = np.ones(10)
+
+    resting_ind[3] = 0
+    padding = 2
+
+    resting_ind_after_padding = pad_resting_ind(resting_ind, padding)
+
+    import matplotlib.pyplot as plt
+
+    plt.plot(resting_ind.astype(int), "o", color="red", label="before padding")
+    plt.plot(
+        resting_ind_after_padding.astype(int), ".", color="blue", label="after padding"
+    )
+    plt.legend()
+    plt.show()
+    1
+
+
 def test_do_preprocessing_lfp_for_ripple_analysis() -> None:
 
     t = np.arange(0, 1, 1 / 2500)
