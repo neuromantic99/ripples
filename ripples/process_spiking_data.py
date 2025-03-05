@@ -7,7 +7,9 @@ from scipy.ndimage.filters import gaussian_filter1d
 
 
 def firing_rate(
-    spike_train: np.ndarray, min_time: Any = None, max_time: Any = None
+    spike_train: np.ndarray,
+    min_time: float | None = None,
+    max_time: float | None = None,
 ) -> float:
     """Calculate firing rate for a spike train.
 
@@ -39,6 +41,8 @@ def firing_rate(
     return fr
 
 
+# there is an updated version of this calculation implemented in spikeInterface and provided for matlab by the cortex lab, shouldd give very similar results for contamination rates < 20%
+# https://github.com/cortex-lab/sortingQuality/blob/master/core/ISIViolations.m
 def isi_violations(
     spike_train: np.ndarray,
     min_time: float,
@@ -70,17 +74,28 @@ def isi_violations(
 
     """
 
-    duplicate_spikes = np.where(np.diff(spike_train) <= min_isi)[0]
+    duplicate_spikes = np.where(np.diff(spike_train) <= min_isi)[
+        0
+    ]  # spikes occuring within a certain time window are considered as duplicates ( eg same spike detected on different channels)
 
     spike_train = np.delete(spike_train, duplicate_spikes + 1)
-    isis = np.diff(spike_train)
+    isis = np.diff(
+        spike_train
+    )  # calculate the time difference between each consecutive spike
 
     num_spikes = len(spike_train)
+    # identify all the interspike intervals which are lower then the minimum time difference so that they would be within the refractory period
     num_violations = sum(isis < isi_threshold)
-    violation_time = 2 * num_spikes * (isi_threshold - min_isi)
+    violation_time = (
+        2 * num_spikes * (isi_threshold - min_isi)
+    )  # total time available for violations, there is an available window of length (isi_threshod -minISI) after each spike.
     total_rate = firing_rate(spike_train, min_time, max_time)
-    violation_rate = num_violations / violation_time
-    fpRate = violation_rate / total_rate
+    violation_rate = (
+        num_violations / violation_time
+    )  # number of refractory period violations per time available for refractory period violations
+    fpRate = (
+        violation_rate / total_rate
+    )  # normalizing the rate of refractory period violation by dividing it by the firing rate of the cluster
 
     return fpRate, num_violations
 
@@ -88,7 +103,7 @@ def isi_violations(
 def calculate_isi_violations(
     spike_times: np.ndarray,
     spike_clusters: np.ndarray,
-    isi_threshold: float = 0.0015,
+    isi_threshold: float = 0.0015,  # suggested by Allen Institute and used by the Cortex lab as well https://github.com/cortex-lab/sortingQuality/blob/master/%2BsqKilosort/isiViolations.m
     min_isi: float = 0.0005,
 ) -> np.ndarray:
 
@@ -141,12 +156,18 @@ def amplitude_cutoff(
     support = b[:-1]
 
     peak_index = np.argmax(pdf)
-    G = np.argmin(np.abs(pdf[peak_index:] - pdf[0])) + peak_index
+    G = (
+        np.argmin(np.abs(pdf[peak_index:] - pdf[0])) + peak_index
+    )  # finds the minimum on the right side of the peak -> border of the gaussian distribution
 
     bin_size = np.mean(np.diff(support))
-    fraction_missing = np.sum(pdf[G:]) * bin_size
+    fraction_missing = (
+        np.sum(pdf[G:]) * bin_size
+    )  # calculating the fraction of spikes that is further right than the minimum in the gaussian distribution and therefore missing on the left side of the distribution
 
-    fraction_missing = np.min([fraction_missing, 0.5])
+    fraction_missing = np.min(
+        [fraction_missing, 0.5]
+    )  # if more than 50% of spikes are missing, an accurate estimate isn't possible
 
     return fraction_missing
 
