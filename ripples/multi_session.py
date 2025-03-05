@@ -12,7 +12,6 @@ from ripples.models import (
     ClusterType,
     Session,
     SessionToAverage,
-    SessionToAverageGU,
     ClusterInfo,
 )
 
@@ -880,9 +879,7 @@ def plot_ripple_triggered_firing(
         session_id_WTs = [session.id for session in WTs]
         mean_WTs = mean_across_sessions(
             [
-                SessionToAverageGU(
-                    session_id_WTs[session], mean_per_session_WTs[session]
-                )
+                SessionToAverage(session_id_WTs[session], mean_per_session_WTs[session])
                 for session in range(len(session_id_WTs))
             ]
         )
@@ -903,7 +900,7 @@ def plot_ripple_triggered_firing(
         session_id_NLGFs = [session.id for session in NLGFs]
         mean_NLGFs = mean_across_sessions(
             [
-                SessionToAverageGU(
+                SessionToAverage(
                     session_id_NLGFs[session], mean_per_session_NLGFs[session]
                 )
                 for session in range(len(session_id_NLGFs))
@@ -989,8 +986,8 @@ def main() -> None:
 
     WTs, NLGFs = load_sessions()
     filter_ripples_new(WTs, NLGFs)
-    plot_ripple_raw(WTs, NLGFs)
-    plot_noise_levels(WTs, NLGFs)
+    #plot_ripple_raw(WTs, NLGFs)
+    #plot_noise_levels(WTs, NLGFs)
     plot_ripple_triggered_firing(WTs, NLGFs)
     number_of_ripples_plot(WTs, NLGFs)
 
