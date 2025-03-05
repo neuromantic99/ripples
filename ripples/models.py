@@ -77,10 +77,4 @@ class ProbeCoordinate(BaseModel):
 @dataclass
 class SessionToAverage:
     id: str
-    data: float
-
-
-@dataclass
-class SessionToAverageGU:
-    id: str
-    data: np.ndarray
+    data: float | np.ndarray
