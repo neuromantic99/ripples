@@ -163,9 +163,7 @@ def mean_across_sessions(sessions: List[SessionToAverage]) -> np.ndarray:
     data_dict: defaultdict[str, dict] = defaultdict(lambda: {"sum": 0, "count": 0})
     # Populate the dictionary with sums and counts
     for session in sessions:
-        data_dict[session.id][
-            "sum"
-        ] += session.data  # NumPy supports element-wise addition
+        data_dict[session.id]["sum"] += session.data
 
         data_dict[session.id]["count"] += 1
 

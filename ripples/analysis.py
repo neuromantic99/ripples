@@ -9,7 +9,6 @@ from scipy.stats import zscore
 import matplotlib.pyplot as plt
 import csv
 
-import mat73
 import numpy as np
 import pandas as pd
 from scipy import io
@@ -29,7 +28,6 @@ from ripples.plotting import (
     plot_resting_ripples,
 )
 from ripples.ripple_detection import (
-    count_spikes_around_ripple,
     get_candidate_ripples,
     remove_duplicate_ripples,
     get_quality_metrics,
@@ -187,9 +185,6 @@ def load_spikes(
     plot: bool = False,
 ) -> List[ClusterInfo]:
 
-    # TODO: filter noise clusters, not sure if Jana has vetted these
-    # keep_idx = cluster_info[cluster_info["KSLabel"].isin(["good", "mua"])].index
-
     spike_times = np.load(UMBRELLA / kilosort_path / "spike_times.npy")
     spike_clusters = np.load(UMBRELLA / kilosort_path / "spike_clusters.npy")
     amplitudes = np.load(UMBRELLA / kilosort_path / "amplitudes.npy")
@@ -244,37 +239,49 @@ def load_spikes(
             aligned_spike_times_ind
         ]
         plt.figure()
-        plt.scatter(aligned_spike_times, aligned_spike_depths)
+        plt.scatter(aligned_spike_times, aligned_spike_depths, s=4)
         plt.show()
+        # checked that the scatterplot looks the same using the code below
+        # channels_per_cluster = np.hstack([np.repeat(cluster.channel,len(cluster.spike_times)) for cluster in all_data])
+        # spike_times_per_cluster = np.hstack([cluster.spike_times for cluster in all_data])
 
     n_channels = len(region_channel)
     channel_map = np.arange(n_channels)
     channel_map = interleave_arrays(
         channel_map[: n_channels // 2], channel_map[n_channels // 2 :]
     )
+    assert len(region_channel) == len(channel_map)
 
     assert len(spike_times) == len(amplitudes) == len(spike_clusters)
     cluster_df["good_unit"] = get_good_unit_ids(spike_clusters, amplitudes, spike_times)
 
-    return [
-        ClusterInfo(
-            spike_times=(
-                aligned_spike_times[aligned_spike_clusters == row["cluster_id"]]
+    all_data = []
+    n = -1
+    for cluster in list(np.unique(aligned_spike_clusters)):
+        if len(aligned_spike_times[aligned_spike_clusters == cluster]) > 1:
+            n = n + 1
+            row = cluster_df.loc[cluster_df["cluster_id"] == cluster]
+            cluster_info = ClusterInfo(
+                spike_times=(aligned_spike_times[aligned_spike_clusters == cluster])
+                .squeeze()
+                .tolist(),
+                region=region_channel[channel_map[int(row["ch"][n])]],
+                info=ClusterType(row["KSLabel"][n]),
+                channel=int(channel_map[row["ch"][n]]),
+                depth=float(row["depth"][n]),
+                good_cluster=bool(row["good_unit"][n]),
             )
-            .squeeze()
-            .tolist(),
-            region=region_channel[row["ch"]],
-            info=ClusterType(row["KSLabel"]),
-            channel=int(
-                channel_map[row["ch"]]
-            ),  # Int cast as np.in64 is not json serializable
-            depth=row["depth"],
-            good_cluster=row["good_unit"],
-        )
-        for _, row in cluster_df.iterrows()
-        # A single spike doesn't make sense and it ruins the type of the class
-        if len(aligned_spike_times[aligned_spike_clusters == row["cluster_id"]]) > 1
-    ]
+            assert len(spike_times[spike_clusters == cluster]) == int(
+                cluster_df["n_spikes"][n]
+            )
+            assert (
+                region_channel[int(cluster_info.depth / 20 - 1)] == cluster_info.region
+            )
+            all_data.append(cluster_info)
+
+    print("done")
+
+    return all_data
 
 
 def get_smoothed_activity_matrix(
@@ -592,55 +599,12 @@ def cache_session(metadata_probe: pd.Series) -> None:
         "events": ripples,
     }
 
-    # area_map = {"dg-": "dentate", "ca1": "ca1", "rsp": "retrosplenial"}
-
-    # # Identify clusters for each region and extract spikeTimes around each ripple event for each cluster
-    # # TODO: Probably this is the wrong place to compute this
-    # padding = 2  # in seconds
-    # n_bins = 200  # 200 bins = 50 bins/second
-    # for area in area_map:
-
-    #     channels_keep = [
-    #         idx
-    #         for idx, region in enumerate(region_channel)
-    #         if region is not None and area in region.lower()
-    #     ]
-
-    #     print(f"Number of channels in {area_map[area]}: {len(channels_keep)}")
-
-    #     spike_times =[
-    #             cluster.spike_times
-    #             for cluster in clusters_info
-    #             if cluster.channel in channels_keep
-    #         ]
-
-    #     good_ind =[
-    #             cluster.good_cluster
-    #             for cluster in clusters_info
-    #             if cluster.channel in channels_keep
-    #         ]
-
-    #     spike_count = [
-    #         count_spikes_around_ripple(
-    #             ripple=ripple,
-    #             spike_times=spike_times,
-    #             padding=padding,
-    #             num_bins=n_bins,
-    #             sampling_rate_lfp=sampling_rate_lfp,
-    #         )
-    #         for ripple in ripples
-    #     ]
-
-    #     # gets saved as a List of all the ripples containing for each ripples all the binned spiketimes for each cluster in that brain regions around the ripple peak List[List[np.array]]
-    #     ripples_summary[area_map[area]] = spike_count
-    #     ripples_summary[(area_map[area] + "_good_cluster_ind")] = good_ind
-    #     assert len(spike_count[0]) == len(ripples_summary[(area_map[area] + "_good_cluster_ind")])
-
     ripples_summary["ripple_amplitude"] = [ripple.peak_amplitude for ripple in ripples]
     ripples_summary["ripple_frequency"] = [ripple.frequency for ripple in ripples]
     ripples_summary["ripple_bandpower"] = [
         ripple.bandpower_ripple for ripple in ripples
     ]
+    ripples_summary["ripple_strength"] = [ripple.strength for ripple in ripples]
     ripples_summary["ripple_freq_check"] = freq_check
     ripples_summary["ripple_CAR_check"] = CAR_check
     ripples_summary["ripple_SRP_check"] = SRP_check
@@ -671,7 +635,7 @@ def main() -> None:
 
     reprocess = False
     metadata = gsheet2df("1HSERPbm-kDhe6X8bgflxvTuK24AfdrZJzbdBy11Hpcg", "sessions", 1)
-    metadata = metadata[metadata["6M_cohort"] == "TRUE"]
+    metadata = metadata[metadata["test_4M"] == "TRUE"]
     metadata = metadata[metadata["Ignore"] == "FALSE"]
     # metadata = metadata[metadata["Perfect_Peak"] == "Definitely"]
 
