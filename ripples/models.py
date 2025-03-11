@@ -29,6 +29,7 @@ class CandidateEvent(BaseModel):
     peak_idx: int
     frequency: float
     bandpower_ripple: float
+    strength: float
     detection_channel: int
     raw_lfp: List[float]
 
@@ -37,6 +38,7 @@ class RipplesSummary(BaseModel):
     ripple_amplitude: List[float]
     ripple_frequency: List[float]
     ripple_bandpower: List[float]
+    ripple_strength: List[float]
     ripple_freq_check: List[bool]
     ripple_CAR_check: List[bool]
     ripple_SRP_check: List[bool]

@@ -248,6 +248,9 @@ def detect_ripple_events(
                         detection_channel=detection_channels_ca1[channel],
                         frequency=max_freq,
                         bandpower_ripple=bandpower_ripple,
+                        strength=float(
+                            np.trapz(ripple_band_unsmoothed[start_event:idx].T)
+                        ),
                         raw_lfp=raw_lfp,
                     )
                 )
