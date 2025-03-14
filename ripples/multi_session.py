@@ -509,7 +509,7 @@ def get_clusters_ind_per_region(session: Session, area: str) -> List:
     return clusters_keep
 
 
-def plot_ripple_triggered_spikes_new(
+def plot_ripple_triggered_spikes(
     data: np.ndarray[any, any], region: str, color: str, session_id: List[str]
 ) -> None:
 
@@ -607,13 +607,13 @@ def plot_ripple_triggered_firing(
         session_id_NLGFs = [session.id for session in NLGFs]
 
         plt.subplot(1, 3, n)
-        plot_ripple_triggered_spikes_new(
+        plot_ripple_triggered_spikes(
             mean_per_session_WTs,
             area,
             "blue",
             session_id_WTs,
         )
-        plot_ripple_triggered_spikes_new(
+        plot_ripple_triggered_spikes(
             mean_per_session_NLGFs,
             area,
             "red",
@@ -720,7 +720,7 @@ def plot_ripple_triggered_firing_average_per_ripple_first(
     for area in area_map:
         n = n + 1
         plt.subplot(1, 3, n)
-        plot_ripple_triggered_spikes_new(
+        plot_ripple_triggered_spikes(
             np.vstack(
                 [
                     process_ripple_triggered_average_session(
@@ -733,7 +733,7 @@ def plot_ripple_triggered_firing_average_per_ripple_first(
             "blue",
             [session.id for session in WTs],
         )
-        plot_ripple_triggered_spikes_new(
+        plot_ripple_triggered_spikes(
             np.vstack(
                 [
                     process_ripple_triggered_average_session(
