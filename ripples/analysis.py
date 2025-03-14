@@ -477,12 +477,6 @@ def cache_session(metadata_probe: pd.Series) -> None:
     assert len(region_channel) == 384
     assert region_channel[383] == "Outside brain"
 
-    # load kilosort processed data (already preprocessed using matlab code & phy)
-    clusters_info = load_spikes(
-        Path(metadata_probe["Kilosort path"]), region_channel, sync, sampling_rate_lfp
-    )
-    check_channel_order(clusters_info)
-
     # save brain region for each channel in a seperate file
     data_path_channel_regions = RESULTS_PATH / "channel_regions"
     if not data_path_channel_regions.exists():
@@ -495,8 +489,18 @@ def cache_session(metadata_probe: pd.Series) -> None:
         write.writerow(region_channel)
 
     # plot and save lfp spectrogram
-    plot_lfp_spectrogram(lfp, recording_id, sampling_rate_lfp)
+    plot_lfp_spectrogram(
+        lfp, resting_ind, region_channel, recording_id, sampling_rate_lfp
+    )
 
+    # load kilosort processed data (already preprocessed using matlab code & phy)
+    clusters_info = load_spikes(
+        Path(metadata_probe["Kilosort path"]), region_channel, sync, sampling_rate_lfp
+    )
+    check_channel_order(clusters_info)
+
+
+    #ripple detection
     all_CA1_channels = [
         idx
         for idx, region in enumerate(region_channel)
