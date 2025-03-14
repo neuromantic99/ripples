@@ -76,77 +76,70 @@ def plot_ripple_raw(all_mice: List[Session]) -> None:
                 continue
             if not all_mice[rec].ripples_summary.events[n].raw_lfp:
                 continue
-            else:
-                raw = np.array(all_mice[rec].ripples_summary.events[n].raw_lfp)
-                raw = raw[2000:-2000]
-                filtered = bandpass_filter(
-                    raw.reshape(1, len(raw)),
-                    RIPPLE_BAND[0],
-                    RIPPLE_BAND[1],
-                    all_mice[rec].sampling_rate_lfp,
-                )
-                envelope = signal.savgol_filter(compute_envelope(filtered), 101, 4)
-                filtered = filtered.reshape(filtered.shape[1], 1)
-                envelope = envelope.reshape(envelope.shape[1], 1)
+            raw = np.array(all_mice[rec].ripples_summary.events[n].raw_lfp)
+            raw = raw[2000:-2000]
+            filtered = bandpass_filter(
+                raw.reshape(1, len(raw)),
+                RIPPLE_BAND[0],
+                RIPPLE_BAND[1],
+                all_mice[rec].sampling_rate_lfp,
+            )
+            envelope = signal.savgol_filter(compute_envelope(filtered), 101, 4)
+            filtered = filtered.reshape(filtered.shape[1], 1)
+            envelope = envelope.reshape(envelope.shape[1], 1)
 
-                all_data = np.hstack((filtered, envelope))
+            all_data = np.hstack((filtered, envelope))
 
-                fig, axs = plt.subplots(3, 1, sharex=True)
-                time = range(-500, 500, 1)
+            fig, axs = plt.subplots(3, 1, sharex=True)
+            time = range(-500, 500, 1)
 
-                fs = all_mice[rec].sampling_rate_lfp
-                w = 12.0
-                freq = np.linspace(1, 500, 100)
-                scales = w * fs / (2 * freq * np.pi)
-                scales = np.logspace(
-                    np.log10(scales.min()), np.log10(scales.max()), num=100
-                )
-                cwtm, freqs = pywt.cwt(
-                    raw, scales, "cmor2.5-1.5", sampling_period=1 / fs
-                )
-                cwtm /= np.max(np.abs(cwtm))
-                axs[0].pcolormesh(
-                    time,
-                    freqs[0:50],
-                    np.abs(cwtm[0:50, :]),
-                    cmap="viridis",
-                    shading="gouraud",
-                )
-                axs[0].axhline(RIPPLE_BAND[0], color="red", linestyle="-")
-                axs[0].axhline(RIPPLE_BAND[1], color="red", linestyle="-")
-                font = {"size": 10}
-                axs[0].set_title(
-                    f"freq_check: {all_mice[rec].ripples_summary.ripple_freq_check[n]};CAR_check:{all_mice[rec].ripples_summary.ripple_CAR_check[n]};SRP_check:{all_mice[rec].ripples_summary.ripple_SRP_check[n]};CAR_check_lr:{all_mice[rec].ripples_summary.ripple_CAR_check_lr[n]};SRP_check_lr:{all_mice[rec].ripples_summary.ripple_SRP_check_lr[n]}",
-                    fontdict=font,
-                )
+            fs = all_mice[rec].sampling_rate_lfp
+            w = 12.0
+            freq = np.linspace(1, 500, 100)
+            scales = w * fs / (2 * freq * np.pi)
+            scales = np.logspace(
+                np.log10(scales.min()), np.log10(scales.max()), num=100
+            )
+            cwtm, freqs = pywt.cwt(raw, scales, "cmor2.5-1.5", sampling_period=1 / fs)
+            cwtm /= np.max(np.abs(cwtm))
+            axs[0].pcolormesh(
+                time,
+                freqs[0:50],
+                np.abs(cwtm[0:50, :]),
+                cmap="viridis",
+                shading="gouraud",
+            )
+            axs[0].axhline(RIPPLE_BAND[0], color="red", linestyle="-")
+            axs[0].axhline(RIPPLE_BAND[1], color="red", linestyle="-")
+            font = {"size": 10}
+            axs[0].set_title(
+                f"freq_check: {all_mice[rec].ripples_summary.ripple_freq_check[n]};CAR_check:{all_mice[rec].ripples_summary.ripple_CAR_check[n]};SRP_check:{all_mice[rec].ripples_summary.ripple_SRP_check[n]};CAR_check_lr:{all_mice[rec].ripples_summary.ripple_CAR_check_lr[n]};SRP_check_lr:{all_mice[rec].ripples_summary.ripple_SRP_check_lr[n]}",
+                fontdict=font,
+            )
 
-                onset_time = all_mice[rec].ripples_summary.events[n].onset
-                offset_time = all_mice[rec].ripples_summary.events[n].offset
-                peak_time = all_mice[rec].ripples_summary.events[n].peak_idx
+            onset_time = all_mice[rec].ripples_summary.events[n].onset
+            offset_time = all_mice[rec].ripples_summary.events[n].offset
+            peak_time = all_mice[rec].ripples_summary.events[n].peak_idx
 
-                # Plot
-                axs[1].plot(time, raw, linewidth=0.5)
-                axs[2].plot(time, all_data, linewidth=0.5)
-                axs[2].axvline((onset_time - peak_time), color="red", linestyle="-")
-                axs[2].axvline((offset_time - peak_time), color="red", linestyle="-")
-                axs[2].set_xlabel("time (ms)")
-                axs[2].set_title(
-                    f"onset: {onset_time/all_mice[rec].sampling_rate_lfp}",
-                    fontdict=font,
-                )
+            # Plot
+            axs[1].plot(time, raw, linewidth=0.5)
+            axs[2].plot(time, all_data, linewidth=0.5)
+            axs[2].axvline((onset_time - peak_time), color="red", linestyle="-")
+            axs[2].axvline((offset_time - peak_time), color="red", linestyle="-")
+            axs[2].set_xlabel("time (ms)")
+            axs[2].set_title(
+                f"onset: {onset_time/all_mice[rec].sampling_rate_lfp}",
+                fontdict=font,
+            )
 
-                figure_path = (
-                    RESULTS_PATH
-                    / "figures"
-                    / "ripples"
-                    / f"{all_mice[rec].id}"
-                    / f"{rec}"
-                )
-                if not figure_path.exists():
-                    os.makedirs(figure_path)
+            figure_path = (
+                RESULTS_PATH / "figures" / "ripples" / f"{all_mice[rec].id}" / f"{rec}"
+            )
+            if not figure_path.exists():
+                os.makedirs(figure_path)
 
-                plt.savefig(figure_path / f"ripple_{n}.png")
-                plt.close(fig)
+            plt.savefig(figure_path / f"ripple_{n}.png")
+            plt.close(fig)
 
 
 def plot_ripple_frequency_spectrum(all_mice: List[Session]) -> None:
@@ -313,13 +306,13 @@ def plot_ripple_characteristics(WTs: List[Session], NLGFs: List[Session]) -> Non
         [session.id for session in all_genotypes], return_index=True
     )
     all_data["Genotype"] = np.array(
-        [session.id.split("_")[:3][0] for session in all_genotypes]
+        [session.id.split("_")[0] for session in all_genotypes]
     )[anim_inds]
-    all_data["ID"] = np.array(
-        [session.id.split("_")[:3][2] for session in all_genotypes]
-    )[anim_inds]
+    all_data["ID"] = np.array([session.id.split("_")[2] for session in all_genotypes])[
+        anim_inds
+    ]
     all_data["timepoint"] = np.array(
-        [session.id.split("_")[:4][3] for session in all_genotypes]
+        [session.id.split("_")[3] for session in all_genotypes]
     )[anim_inds]
 
     all_data["Mean Ripple Amplitude"] = mean_across_sessions(
@@ -494,11 +487,6 @@ def mean_across_ripples(session: Session, plot: bool = True) -> np.ndarray:
         area_map = {"dg-": "dentate", "ca1": "ca1", "rsp": "retrosplenial"}
         for area in area_map:
             ind_area = get_clusters_ind_per_region(session, area)
-            cluster_mean_area = (
-                mean_firing_around_ripples[min(ind_area) : max(ind_area)],
-                axis,
-            ) = 1
-
             plt.figure()
             plt.pcolormesh(
                 zscore(
@@ -521,24 +509,31 @@ def get_clusters_ind_per_region(session: Session, area: str) -> List:
     return clusters_keep
 
 
-def plot_ripple_triggered_spikes_new(data: np.ndarray, region: str, color: str) -> None:
+def plot_ripple_triggered_spikes_new(
+    data: np.ndarray[any, any], region: str, color: str, session_id: List[str]
+) -> None:
 
-    means = data
+    data = mean_across_sessions(
+        [
+            SessionToAverage(session_id[session], data[session])
+            for session in range(len(session_id))
+        ]
+    )
 
     padding_seconds = 2  # From analysis.py
-    x_axis = np.linspace(-padding_seconds, padding_seconds, means.shape[1])
+    x_axis = np.linspace(-padding_seconds, padding_seconds, data.shape[1])
 
     plt.plot(
         x_axis,
-        np.mean(means, axis=0),
+        np.mean(data, axis=0),
         color=color,
         label=region,
     )
 
     plt.fill_between(
         x_axis,
-        np.mean(means, axis=0) - np.std(means, axis=0) / np.sqrt(means.shape[0]),
-        np.mean(means, axis=0) + np.std(means, axis=0) / np.sqrt(means.shape[0]),
+        np.mean(data, axis=0) - np.std(data, axis=0) / np.sqrt(data.shape[0]),
+        np.mean(data, axis=0) + np.std(data, axis=0) / np.sqrt(data.shape[0]),
         color=color,
         alpha=0.3,
     )
@@ -576,61 +571,53 @@ def plot_ripple_triggered_firing(
     n = 0
     for area in area_map:
         n = n + 1
-        mean_per_session_WTs = [
-            np.mean(
-                zscore(
-                    mean_firing_around_ripples_all_clusters_WTs[session][
-                        get_clusters_ind_per_region(WTs[session], area)
-                    ],
-                    axis=1,
-                ),
-                axis=0,
-            )
-            for session in range(len(WTs))
-        ]
+        # using the nan mean because z_scoring for silent cells without firing around ripples will give back nans
+        mean_per_session_WTs = np.vstack(
+            [
+                np.nanmean(
+                    zscore(
+                        mean_firing_around_ripples_all_clusters_WTs[session][
+                            get_clusters_ind_per_region(WTs[session], area)
+                        ],
+                        axis=1,
+                    ),
+                    axis=0,
+                )
+                for session in range(len(WTs))
+            ]
+        )
 
         session_id_WTs = [session.id for session in WTs]
-        mean_WTs = mean_across_sessions(
+
+        mean_per_session_NLGFs = np.vstack(
             [
-                SessionToAverage(session_id_WTs[session], mean_per_session_WTs[session])
-                for session in range(len(session_id_WTs))
+                np.nanmean(
+                    zscore(
+                        mean_firing_around_ripples_all_clusters_NLGFs[session][
+                            get_clusters_ind_per_region(NLGFs[session], area)
+                        ],
+                        axis=1,
+                    ),
+                    axis=0,
+                )
+                for session in range(len(NLGFs))
             ]
         )
-
-        # currently zscore for cluster_mean then mean across different clusters
-        mean_per_session_NLGFs = [
-            np.mean(
-                zscore(
-                    mean_firing_around_ripples_all_clusters_NLGFs[session][
-                        get_clusters_ind_per_region(NLGFs[session], area)
-                    ],
-                    axis=1,
-                ),
-                axis=0,
-            )
-            for session in range(len(NLGFs))
-        ]
 
         session_id_NLGFs = [session.id for session in NLGFs]
-        mean_NLGFs = mean_across_sessions(
-            [
-                SessionToAverage(
-                    session_id_NLGFs[session], mean_per_session_NLGFs[session]
-                )
-                for session in range(len(session_id_NLGFs))
-            ]
-        )
 
         plt.subplot(1, 3, n)
         plot_ripple_triggered_spikes_new(
-            mean_WTs,
+            mean_per_session_WTs,
             area,
             "blue",
+            session_id_WTs,
         )
         plot_ripple_triggered_spikes_new(
-            mean_NLGFs,
+            mean_per_session_NLGFs,
             area,
             "red",
+            session_id_NLGFs,
         )
 
         plt.ylabel("Firing Rate (z-score)")
@@ -702,49 +689,10 @@ def process_ripple_triggered_average_session(
 
     stacked_trials = np.vstack([s for s in session])
     stacked_trials = smooth_ripple_triggered_average(stacked_trials, 2)
+    stacked_trials = zscore(stacked_trials, axis=1)
 
     mean_across_trials = np.mean(stacked_trials, axis=0)
-    return zscore(
-        mean_across_trials
-    )  # is it good to zscore after taking the mean across trials or should it rather be done before?
-
-
-def plot_ripple_triggered_spikes(
-    data: List[np.ndarray[Any, Any]], region: str, color: str, session_id: List[str]
-) -> None:
-    """Data is a List of sessions with a list of trials(one for each ripple) with an array of binned spike times."""
-
-    means = np.vstack(
-        [process_ripple_triggered_average_session(session) for session in data]
-    )
-    means_per_anim = mean_across_sessions(
-        [
-            SessionToAverage(session_id[session], means[session])
-            for session in range(len(session_id))
-        ]
-    )
-
-    padding_seconds = 2
-    x_axis = np.linspace(-padding_seconds, padding_seconds, means_per_anim.shape[1])
-
-    plt.plot(
-        x_axis,
-        np.mean(means_per_anim, axis=0),
-        color=color,
-        label=region,
-    )
-
-    plt.fill_between(
-        x_axis,
-        np.mean(means_per_anim, axis=0)
-        - np.std(means_per_anim, axis=0) / np.sqrt(means_per_anim.shape[0]),
-        np.mean(means_per_anim, axis=0)
-        + np.std(means_per_anim, axis=0) / np.sqrt(means_per_anim.shape[0]),
-        color=color,
-        alpha=0.3,
-    )
-
-    plt.xlim(-2, 2)
+    return mean_across_trials
 
 
 def plot_ripple_triggered_firing_average_per_ripple_first(
@@ -772,14 +720,28 @@ def plot_ripple_triggered_firing_average_per_ripple_first(
     for area in area_map:
         n = n + 1
         plt.subplot(1, 3, n)
-        plot_ripple_triggered_spikes(
-            [mean_per_ripple(session, area) for session in WTs],
+        plot_ripple_triggered_spikes_new(
+            np.vstack(
+                [
+                    process_ripple_triggered_average_session(
+                        mean_per_ripple(session, area)
+                    )
+                    for session in WTs
+                ]
+            ),
             "WT",
             "blue",
             [session.id for session in WTs],
         )
-        plot_ripple_triggered_spikes(
-            [mean_per_ripple(session, area) for session in NLGFs],
+        plot_ripple_triggered_spikes_new(
+            np.vstack(
+                [
+                    process_ripple_triggered_average_session(
+                        mean_per_ripple(session, area)
+                    )
+                    for session in NLGFs
+                ]
+            ),
             "NLGF",
             "red",
             [session.id for session in NLGFs],
@@ -790,7 +752,7 @@ def plot_ripple_triggered_firing_average_per_ripple_first(
         fig.suptitle("Averaging across clusters per ripple first")
 
 
-def filter_ripples_new(
+def filter_ripples(
     WTs: List[Session], NLGFs: List[Session]
 ) -> tuple[List[Session], List[Session]]:
 
@@ -823,7 +785,7 @@ def load_sessions() -> Tuple[List[Session], List[Session]]:
     for file in results_files:
 
         if (
-            "4M" not in file.name
+            "6M" not in file.name
             # and "4M" not in file.name
             # and "5M" not in file.name
             or "A" not in file.name
@@ -849,13 +811,13 @@ def load_sessions() -> Tuple[List[Session], List[Session]]:
 def main() -> None:
 
     WTs, NLGFs = load_sessions()
-    filter_ripples_new(WTs, NLGFs)
+    filter_ripples(WTs, NLGFs)
     # plot_noise_levels(WTs, NLGFs)
 
     # plot_ripple_characteristics(WTs, NLGFs)
-    plot_ripple_triggered_firing_average_per_ripple_first(
-        WTs, NLGFs, good_units_only=True
-    )
+    # plot_ripple_triggered_firing_average_per_ripple_first(
+    #     WTs, NLGFs, good_units_only=True
+    # )
     plot_ripple_triggered_firing(WTs, NLGFs, good_units_only=True)
 
     spikes_per_ripple(WTs, NLGFs)
