@@ -167,38 +167,22 @@ def plot_channel_depth_profile(
 
 
 def plot_resting_ripples(
-    rotary_encoder: RotaryEncoder,
     max_time: float,
     ripples: List[CandidateEvent],
-    resting_ind: np.array,
-    speed_cm_per_s: np.array,
+    resting_ind: np.ndarray,
+    speed_cm_per_s: np.ndarray,
     sampling_rate: float,
     recording_id: str,
 ) -> None:
 
-    bin_size = 1
     max_time = max_time / sampling_rate
-    bin_edges = np.arange(0, max_time, bin_size)
-
-    speed = []
-    # TODO: use calculate_speed function
-    for idx in range(len(bin_edges) - 1):
-        start_time = bin_edges[idx]
-        end_time = bin_edges[idx + 1]
-        start_idx = smallest_positive_index(start_time - rotary_encoder.time)
-        end_idx = smallest_positive_index(end_time - rotary_encoder.time)
-        distance = rotary_encoder.position[end_idx] - rotary_encoder.position[start_idx]
-        speed.append(distance / (end_time - start_time))
-
-    speed = np.array(speed)
-
     onset_times = [ripple.onset for ripple in ripples]
     onset_times_in_sec = [x / sampling_rate for x in onset_times]
     y_vec = np.ones(len(ripples))
 
     plt.figure()
-    plt.plot(speed_cm_per_s[0:-1:2500])
-    plt.plot(resting_ind[0:-1:2500])
+    plt.plot(speed_cm_per_s[::2500])
+    plt.plot(resting_ind[::2500])
     plt.scatter(onset_times_in_sec, y_vec)
 
     figure_path = RESULTS_PATH / "figures" / "Resting_ripples"
@@ -207,13 +191,34 @@ def plot_resting_ripples(
 
     plt.savefig(figure_path / f"{recording_id}_resting_ripples.png")
 
+    # more detailed plot
+    # plt.figure()
+    # xvec= range(len(resting_ind))
+    # plt.scatter(xvec,resting_ind)
+    # plt.plot(resting_ind, 'red')
+    # y_vec = np.ones(len(ripples))-0.5
+    # plt.scatter([ripple.onset for ripple in ripples], y_vec)
+    # plt.plot(speed_cm_per_s, 'green')
+
 
 def plot_lfp_spectrogram(
-    lfp: np.ndarray, recording_id: str, sampling_rate_lfp: float
+    lfp: np.ndarray,
+    resting_ind: np.ndarray,
+    region_channel: List[str],
+    recording_id: str,
+    sampling_rate_lfp: float,
 ) -> None:
-    result = []
-    ind = int(np.round(sampling_rate_lfp * 180))
-    lfp = lfp[:, :ind]
+
+    # get longest resting period based on resting_ind
+    split_indices = np.where(np.diff(resting_ind.astype(int)) != 0)[0] + 1
+    splitted_bool = np.split(resting_ind, split_indices)
+    longest_resting_period = np.argmax([sum(array) for array in splitted_bool])
+    lfp_splitted = np.split(lfp, split_indices, axis=1)
+    lfp_longest_resting_period = lfp_splitted[longest_resting_period]
+
+    if lfp_longest_resting_period.shape[1] > 180 * sampling_rate_lfp:
+        ind = int(np.round(sampling_rate_lfp * 180))
+        lfp_longest_resting_period = lfp[:, :ind]
 
     max_freq = 550
     edges = (
@@ -222,19 +227,24 @@ def plot_lfp_spectrogram(
         + list(range(100, max_freq, 50))
     )
 
+    result = []
     for idx in range(len(edges) - 1):
         start = edges[idx]
         end = edges[idx + 1]
 
         result.append(
-            compute_power(bandpass_filter(lfp, start, end, sampling_rate_lfp, order=3))
+            compute_power(
+                bandpass_filter(
+                    lfp_longest_resting_period, start, end, sampling_rate_lfp, order=4
+                )
+            )
         )
 
     result = np.array(result).T
-    result[15, :] = 0
     result = np.log(result)
-    result[result == -np.inf] = 0
-    # result = zscore(result, axis=0)
+    result = np.flipud(result)
+
+    plt.figure()
     sns.heatmap(
         result,
         square=False,
@@ -242,6 +252,9 @@ def plot_lfp_spectrogram(
         cbar_kws={"label": "Log power"},
     )
     plt.xticks(range(len(edges)), edges)
+    plt.yticks(
+        np.flipud(np.array(range(384))[0:-1:15]), np.array(region_channel)[0:-1:15]
+    )
     plt.xlabel("Frequency (Hz)")
     plt.ylabel("Channel")
 

@@ -12,8 +12,11 @@ from ripples.models import SessionToAverage
 def bandpass_filter(
     lfp: np.ndarray, low: float, high: float, sampling_rate: float, order: int = 4
 ) -> np.ndarray:
-    b, a = signal.butter(order, Wn=[low, high], fs=sampling_rate, btype="bandpass")
-    return signal.filtfilt(b, a, lfp, axis=1)
+    "Using the sos output and sosfiltfilt makes the filter more stable for lower frequencies"
+    sos = signal.butter(
+        order, Wn=[low, high], output="sos", fs=sampling_rate, btype="bandpass"
+    )
+    return signal.sosfiltfilt(sos, lfp, axis=1)
 
 
 # adapted from https://www.askpython.com/python-modules/pandas/comparing-bandpower-matlab-python-numpy

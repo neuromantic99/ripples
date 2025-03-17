@@ -370,8 +370,29 @@ def calculate_speed(
     return speed_cm_per_s
 
 
+def pad_resting_ind(resting_ind: np.ndarray, padding: int) -> np.ndarray:
+
+    resting_ind_after_padding = np.zeros(len(resting_ind), dtype=bool)
+    for ind in range(padding, len(resting_ind) - padding):
+        if np.all(
+            resting_ind[(ind - padding) : (ind + padding + 1)]
+        ):  # +1 because of the way how python indexing/slicing works
+            resting_ind_after_padding[ind] = True
+    for ind in range(0, padding):
+        if np.all(
+            resting_ind[0 : (ind + padding + 1)]
+        ):  # +1 because of the way how python indexing/slicing works
+            resting_ind_after_padding[ind] = True
+    for ind in range(len(resting_ind) - padding, len(resting_ind)):
+        if np.all(resting_ind[ind - padding : len(resting_ind)]):
+            resting_ind_after_padding[ind] = True
+    return resting_ind_after_padding
+
+
 def get_resting_periods(
-    rotary_encoder: RotaryEncoder, max_time: float
+    rotary_encoder: RotaryEncoder,
+    max_time: float,
+    pad: bool = True,
 ) -> Tuple[np.ndarray, np.ndarray]:
 
     bin_size = 2500
@@ -395,11 +416,12 @@ def get_resting_periods(
         )
 
     assert len(speed_cm_per_s) == max_time
-
     resting_ind = speed_cm_per_s == 0
-    assert len(resting_ind) == max_time
+    if pad:
+        resting_ind_after_padding = pad_resting_ind(resting_ind, 2500)
+    assert len(resting_ind_after_padding) == max_time
 
-    return resting_ind, speed_cm_per_s
+    return resting_ind_after_padding, speed_cm_per_s
 
 
 def load_channel_regions(channel_path: Path) -> List[str]:
@@ -469,12 +491,6 @@ def cache_session(metadata_probe: pd.Series) -> None:
     assert len(region_channel) == 384
     assert region_channel[383] == "Outside brain"
 
-    # load kilosort processed data (already preprocessed using matlab code & phy)
-    clusters_info = load_spikes(
-        Path(metadata_probe["Kilosort path"]), region_channel, sync, sampling_rate_lfp
-    )
-    check_channel_order(clusters_info)
-
     # save brain region for each channel in a seperate file
     data_path_channel_regions = RESULTS_PATH / "channel_regions"
     if not data_path_channel_regions.exists():
@@ -487,8 +503,18 @@ def cache_session(metadata_probe: pd.Series) -> None:
         write.writerow(region_channel)
 
     # plot and save lfp spectrogram
-    plot_lfp_spectrogram(lfp, recording_id, sampling_rate_lfp)
+    plot_lfp_spectrogram(
+        lfp, resting_ind, region_channel, recording_id, sampling_rate_lfp
+    )
 
+    # load kilosort processed data (already preprocessed using matlab code & phy)
+    clusters_info = load_spikes(
+        Path(metadata_probe["Kilosort path"]), region_channel, sync, sampling_rate_lfp
+    )
+    check_channel_order(clusters_info)
+
+
+    #ripple detection
     all_CA1_channels = [
         idx
         for idx, region in enumerate(region_channel)
@@ -584,7 +610,6 @@ def cache_session(metadata_probe: pd.Series) -> None:
     )
 
     plot_resting_ripples(
-        rotary_encoder,
         lfp.shape[1],
         ripples,
         resting_ind,
@@ -633,7 +658,7 @@ def cache_session(metadata_probe: pd.Series) -> None:
 
 def main() -> None:
 
-    reprocess = False
+    reprocess = True
     metadata = gsheet2df("1HSERPbm-kDhe6X8bgflxvTuK24AfdrZJzbdBy11Hpcg", "sessions", 1)
     metadata = metadata[metadata["test_4M"] == "TRUE"]
     metadata = metadata[metadata["Ignore"] == "FALSE"]
