@@ -206,16 +206,15 @@ def load_spikes(
     # behavioural recording stops at the first rising edge of the 1s 5 Hz pulse, sampling rate 2500 Hz
     recording_offset = rising_edges[-5] / sampling_rate_lfp * sampling_rate_spikes
 
-    aligned_spike_times_ind = (spike_times > recording_onset) & (
-        spike_times < recording_offset
-    )
+    aligned_spike_times_ind = (
+        (spike_times > recording_onset) & (spike_times < recording_offset)
+    ).squeeze()
+
     aligned_spike_times = (
         spike_times[aligned_spike_times_ind] - recording_onset
     )  # chop off beginning & end, set the time so that it alignes to rotary encoder
     aligned_spike_times = aligned_spike_times / sampling_rate_spikes
-    aligned_spike_clusters = spike_clusters.reshape(len(spike_clusters), 1)[
-        aligned_spike_times_ind
-    ]
+    aligned_spike_clusters = spike_clusters[aligned_spike_times_ind]
 
     assert (
         min(aligned_spike_times) < 1
@@ -256,23 +255,22 @@ def load_spikes(
     cluster_df["good_unit"] = get_good_unit_ids(spike_clusters, amplitudes, spike_times)
 
     all_data = []
-    n = -1
     for cluster in list(np.unique(aligned_spike_clusters)):
+        # A single spike doesn't make sense and it ruins the type of the class
         if len(aligned_spike_times[aligned_spike_clusters == cluster]) > 1:
-            n = n + 1
             row = cluster_df.loc[cluster_df["cluster_id"] == cluster]
             cluster_info = ClusterInfo(
                 spike_times=(aligned_spike_times[aligned_spike_clusters == cluster])
                 .squeeze()
                 .tolist(),
-                region=region_channel[channel_map[int(row["ch"][n])]],
-                info=ClusterType(row["KSLabel"][n]),
-                channel=int(channel_map[row["ch"][n]]),
-                depth=float(row["depth"][n]),
-                good_cluster=bool(row["good_unit"][n]),
+                region=region_channel[channel_map[int(row["ch"].values[0])]],
+                info=ClusterType(row["KSLabel"].values[0]),
+                channel=int(channel_map[row["ch"].values[0]]),
+                depth=float(row["depth"].values[0]),
+                good_cluster=bool(row["good_unit"].values[0]),
             )
             assert len(spike_times[spike_clusters == cluster]) == int(
-                cluster_df["n_spikes"][n]
+                row["n_spikes"].values[0]
             )
             assert (
                 region_channel[int(cluster_info.depth / 20 - 1)] == cluster_info.region
