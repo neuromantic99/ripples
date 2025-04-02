@@ -10,13 +10,18 @@ from ripples.models import SessionToAverage
 
 
 def bandpass_filter(
-    lfp: np.ndarray, low: float, high: float, sampling_rate: float, order: int = 4
+    lfp: np.ndarray, low: float, high: float, sampling_rate: float, order: int = 3
 ) -> np.ndarray:
     "Using the sos output and sosfiltfilt makes the filter more stable for lower frequencies"
     sos = signal.butter(
         order, Wn=[low, high], output="sos", fs=sampling_rate, btype="bandpass"
     )
     return signal.sosfiltfilt(sos, lfp, axis=1)
+
+
+# Schmitz,D and Buszaki, G paper PNAS: 3rd order Butterworth filter 110:200
+# "Ripples were detected by filtering (110-200) the raw LFP (sampled at 1250 Hz) using a 3rd order
+# Butterworth filter. The signal was rectified and normalized to yield a ripple power time series. "
 
 
 # adapted from https://www.askpython.com/python-modules/pandas/comparing-bandpower-matlab-python-numpy
@@ -166,8 +171,9 @@ def mean_across_sessions(sessions: List[SessionToAverage]) -> np.ndarray:
     data_dict: defaultdict[str, dict] = defaultdict(lambda: {"sum": 0, "count": 0})
     # Populate the dictionary with sums and counts
     for session in sessions:
-        data_dict[session.id]["sum"] += session.data
-
-        data_dict[session.id]["count"] += 1
+        # in case one recording doesn'T have any positive or negative responders to ripples (noise, lots of running)
+        if ~np.isnan(sum(session.data)):
+            data_dict[session.id]["sum"] += session.data
+            data_dict[session.id]["count"] += 1
 
     return np.array([value["sum"] / value["count"] for value in data_dict.values()])
