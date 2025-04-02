@@ -9,6 +9,7 @@ from ripples.ripple_detection import (
     remove_duplicate_ripples,
     do_preprocessing_lfp_for_ripple_analysis,
     get_candidate_ripples,
+    check_for_noise_and_filter,
 )
 from ripples.analysis import get_resting_periods, pad_resting_ind
 
@@ -278,7 +279,7 @@ def test_detect_ripple_events_basic() -> None:
 
     data = np.concatenate(
         (
-            np.array([2, 3, 3, 5, 10, 5, 5, 3, 2, 1.5]),
+            np.array([2.5, 3, 3, 5, 10, 5, 5, 3, 2, 1.5]),
             np.ones(30),  # load of ones to make the median 1
         )
     )
@@ -288,13 +289,14 @@ def test_detect_ripple_events_basic() -> None:
 
     CA1_channels = [200, 201]
     resting_ind = np.ones(data.shape[1], dtype=bool)
+    resting_ind_strict = np.ones(data.shape[1], dtype=bool)
 
     with patch(
         "ripples.ripple_detection.do_preprocessing_lfp_for_ripple_analysis",
-        lambda data, y, z: (data[0, :], data[0, :]),
+        lambda data, y, z, a: (data[0, :], data[0, :]),
     ):
         result = detect_ripple_events(
-            0, data, CA1_channels, resting_ind, 2500, "median"
+            0, data, CA1_channels, resting_ind, resting_ind_strict, 2500, "median"
         )
 
         assert result[0].onset == 1
@@ -318,13 +320,14 @@ def test_detect_ripple_events_basic_two_events() -> None:
 
     CA1_channels = [200, 201]
     resting_ind = np.ones(data.shape[1], dtype=bool)
+    resting_ind_strict = np.ones(data.shape[1], dtype=bool)
 
     with patch(
         "ripples.ripple_detection.do_preprocessing_lfp_for_ripple_analysis",
-        lambda data, y, z: (data[0, :], data[0, :]),
+        lambda data, y, z, a: (data[0, :], data[0, :]),
     ):
         result = detect_ripple_events(
-            0, data, CA1_channels, resting_ind, 2500, "median"
+            0, data, CA1_channels, resting_ind, resting_ind_strict, 2500, "median"
         )
 
         assert result[0].onset == 1
@@ -355,14 +358,15 @@ def test_detect_ripple_events_doesnt_exceed_5x() -> None:
 
     CA1_channels = [200, 201]
     resting_ind = np.ones(data.shape[1], dtype=bool)
+    resting_ind_strict = np.ones(data.shape[1], dtype=bool)
 
     with patch(
         "ripples.ripple_detection.do_preprocessing_lfp_for_ripple_analysis",
-        lambda data, y, z: (data[0, :], data[0, :]),
+        lambda data, y, z, a: (data[0, :], data[0, :]),
     ):
 
         result = detect_ripple_events(
-            0, data, CA1_channels, resting_ind, 2500, "median"
+            0, data, CA1_channels, resting_ind, resting_ind_strict, 2500, "median"
         )
         assert result == []
 
@@ -381,13 +385,14 @@ def test_detect_ripple_events_bounces_on_upper() -> None:
 
     CA1_channels = [200, 201]
     resting_ind = np.ones(data.shape[1], dtype=bool)
+    resting_ind_strict = np.ones(data.shape[1], dtype=bool)
 
     with patch(
         "ripples.ripple_detection.do_preprocessing_lfp_for_ripple_analysis",
-        lambda data, y, z: (data[0, :], data[0, :]),
+        lambda data, y, z, a: (data[0, :], data[0, :]),
     ):
         result = detect_ripple_events(
-            0, data, CA1_channels, resting_ind, 2500, "median"
+            0, data, CA1_channels, resting_ind, resting_ind_strict, 2500, "median"
         )  # need lower sampling rate if not ripple frequency to high and code throws an error
 
         assert result[0].onset == 1
@@ -410,13 +415,14 @@ def test_detect_ripple_events_bounces_on_lower() -> None:
 
     CA1_channels = [200, 201]
     resting_ind = np.ones(data.shape[1], dtype=bool)
+    resting_ind_strict = np.ones(data.shape[1], dtype=bool)
 
     with patch(
         "ripples.ripple_detection.do_preprocessing_lfp_for_ripple_analysis",
-        lambda data, y, z: (data[0, :], data[0, :]),
+        lambda data, y, z, a: (data[0, :], data[0, :]),
     ):
         result = detect_ripple_events(
-            0, data, CA1_channels, resting_ind, 2500, "median"
+            0, data, CA1_channels, resting_ind, resting_ind_strict, 2500, "median"
         )
 
         assert result[0].onset == 3
@@ -440,13 +446,14 @@ def test_detect_ripple_events_jumps_to_upper() -> None:
 
     CA1_channels = [200, 201]
     resting_ind = np.ones(data.shape[1], dtype=bool)
+    resting_ind_strict = np.ones(data.shape[1], dtype=bool)
 
     with patch(
         "ripples.ripple_detection.do_preprocessing_lfp_for_ripple_analysis",
-        lambda data, y, z: (data[0, :], data[0, :]),
+        lambda data, y, z, a: (data[0, :], data[0, :]),
     ):
         result = detect_ripple_events(
-            0, data, CA1_channels, resting_ind, 2500, "median"
+            0, data, CA1_channels, resting_ind, resting_ind_strict, 2500, "median"
         )
 
         assert result[0].onset == 0
@@ -469,13 +476,14 @@ def test_detect_ripple_events_ends_during_ripple() -> None:
 
     CA1_channels = [200, 201]
     resting_ind = np.ones(data.shape[1], dtype=bool)
+    resting_ind_strict = np.ones(data.shape[1], dtype=bool)
 
     with patch(
         "ripples.ripple_detection.do_preprocessing_lfp_for_ripple_analysis",
-        lambda data, y, z: (data[0, :], data[0, :]),
+        lambda data, y, z, a: (data[0, :], data[0, :]),
     ):
         result = detect_ripple_events(
-            0, data, CA1_channels, resting_ind, 2500, "median"
+            0, data, CA1_channels, resting_ind, resting_ind_strict, 2500, "median"
         )
 
         assert result[0].onset == 2 + 30
@@ -503,13 +511,14 @@ def test_detect_ripple_events_starts_during_ripple() -> None:
 
     CA1_channels = [200, 201]
     resting_ind = np.ones(data.shape[1], dtype=bool)
+    resting_ind_strict = np.ones(data.shape[1], dtype=bool)
 
     with patch(
         "ripples.ripple_detection.do_preprocessing_lfp_for_ripple_analysis",
-        lambda data, y, z: (data[0, :], data[0, :]),
+        lambda data, y, z, a: (data[0, :], data[0, :]),
     ):
         result = detect_ripple_events(
-            0, data, CA1_channels, resting_ind, 2500, "median"
+            0, data, CA1_channels, resting_ind, resting_ind_strict, 2500, "median"
         )
         assert result[0].onset == 0
         assert result[0].offset == 3
@@ -544,12 +553,15 @@ def test_get_candidate_ripple() -> None:
 
     CA1_channels = [200, 201]
     resting_ind = np.ones(data.shape[1], dtype=bool)
+    resting_ind_strict = np.ones(data.shape[1], dtype=bool)
 
     with patch(
         "ripples.ripple_detection.do_preprocessing_lfp_for_ripple_analysis",
-        lambda data, sampling_rate, channel: (data[channel, :], data[channel, :]),
+        lambda data, sampling_rate, channel, a: (data[channel, :], data[channel, :]),
     ):
-        result = get_candidate_ripples(data, CA1_channels, resting_ind, 2500, "median")
+        result = get_candidate_ripples(
+            data, CA1_channels, resting_ind, resting_ind_strict, 2500, "median"
+        )
 
         assert len(result) == len(CA1_channels)
         assert len(result[0]) == 2
@@ -565,11 +577,8 @@ def test_get_resting_periods() -> None:
     rotary_encoder.position = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
     rotary_encoder.time = [10, 11, 12, 13, 41, 41.5, 42, 85, 86, 87]
     max_time = 90 * 2500
-    with patch(
-        "ripples.analysis.pad_resting_ind",
-        lambda x, y: x,
-    ):
-        resting_ind, speed = get_resting_periods(rotary_encoder, max_time)
+
+    _, resting_ind, speed = get_resting_periods(rotary_encoder, max_time, pad=False)
 
     assert np.round(90 - sum(resting_ind) / 2500) == len(rotary_encoder.time) - 2
     # max time in seconds - resting time/sampling_rate should be equivalent to the length of rotary encoder time
@@ -590,11 +599,9 @@ def test_get_resting_periods_2() -> None:
     rotary_encoder.position = np.array([0, 1, 2, 3, 4, 5])
 
     # Threshold below the minimum speed, max_time larger than the time array
-    with patch(
-        "ripples.analysis.pad_resting_ind",
-        lambda x, y: x,
-    ):
-        resting_ind, speed = get_resting_periods(rotary_encoder, max_time=(5 * 2500))
+    _, resting_ind, speed = get_resting_periods(
+        rotary_encoder, max_time=5 * 2500, pad=False
+    )
 
     result = sum(resting_ind) / len(resting_ind)
     assert result == 0.0
@@ -606,11 +613,9 @@ def test_get_resting_periods_max_time_greater_than_bin_edge() -> None:
     rotary_encoder.time = np.array([0, 1, 2, 3, 4, 5, 5.5])
     rotary_encoder.position = np.array([0, 1, 2, 3, 4, 5, 6])
     # Threshold below the minimum speed, max_time larger than the time array
-    with patch(
-        "ripples.analysis.pad_resting_ind",
-        lambda x, y: x,
-    ):
-        resting_ind, speed = get_resting_periods(rotary_encoder, max_time=(5.5 * 2500))
+    _, resting_ind, speed = get_resting_periods(
+        rotary_encoder, max_time=5.5 * 2500, pad=False
+    )
     result = sum(resting_ind) / len(resting_ind)
     assert result == 0.0
 
@@ -622,11 +627,9 @@ def test_get_resting_periods_all_rest() -> None:
     rotary_encoder.position = np.array([0, 0, 0, 0, 0, 0])
 
     # Threshold above the maximum speed (speed is 0 everywhere)
-    with patch(
-        "ripples.analysis.pad_resting_ind",
-        lambda x, y: x,
-    ):
-        resting_ind, speed = get_resting_periods(rotary_encoder, max_time=(5 * 2500))
+    _, resting_ind, speed = get_resting_periods(
+        rotary_encoder, max_time=5 * 2500, pad=False
+    )
     result = sum(resting_ind) / len(resting_ind)
     assert int(result) == 1, "Expected all resting period"
 
@@ -638,11 +641,10 @@ def test_get_resting_periods_resting_mixed() -> None:
     rotary_encoder.time = np.array([0, 1, 2, 3, 4, 5])
     rotary_encoder.position = np.array([0, 0, 0, 1, 2, 4])
 
-    with patch(
-        "ripples.analysis.pad_resting_ind",
-        lambda x, y: x,
-    ):
-        resting_ind, speed = get_resting_periods(rotary_encoder, max_time=(5 * 2500))
+    _, resting_ind, speed = get_resting_periods(
+        rotary_encoder, max_time=(5 * 2500), pad=False
+    )
+
     result = sum(resting_ind) / len(resting_ind)
     assert np.round(result, decimals=1) == 0.4
 
@@ -653,11 +655,9 @@ def test_get_resting_periods_resting_at_end() -> None:
     rotary_encoder.time = np.array([0, 1, 2, 3, 4, 5])
     rotary_encoder.position = np.array([0, 10, 20, 30, 40, 50])
     max_time = 10 * 2500
-    with patch(
-        "ripples.analysis.pad_resting_ind",
-        lambda x, y: x,
-    ):
-        resting_ind, speed = get_resting_periods(rotary_encoder, max_time)
+    _, resting_ind, speed = get_resting_periods(
+        rotary_encoder, max_time=10 * 2500, pad=False
+    )
 
     result = sum(resting_ind) / len(resting_ind)
     assert result == 0.5
@@ -670,7 +670,7 @@ def test_get_resting_periods_resting_at_end_with_padding() -> None:
     rotary_encoder.position = np.array([0, 10, 20, 30, 40, 50])
     max_time = 10 * 2500
 
-    resting_ind, speed = get_resting_periods(rotary_encoder, max_time)
+    _, resting_ind, speed = get_resting_periods(rotary_encoder, max_time)
     result = sum(resting_ind) / len(resting_ind)
     # Test should pass when padding is set to 2500 in analysis.py
     assert result == 0.4  # max time 10s, 5s resting, 1s padding
@@ -804,7 +804,14 @@ def test_do_preprocessing_lfp_for_ripple_analysis() -> None:
         [data, data]
     )  # need to mimic an array with at leat two channels for the code to work
 
-    sm_envelope, _ = do_preprocessing_lfp_for_ripple_analysis(data, 2500, 0)
+    resting_ind = np.ones(data.shape[1], dtype=bool)
+    with patch(
+        "ripples.ripple_detection.check_for_noise_and_filter",
+        lambda data, y, z: data,
+    ):
+        sm_envelope, _ = do_preprocessing_lfp_for_ripple_analysis(
+            data, 2500, 0, resting_ind
+        )
     m = io.loadmat(
         Path(HERE.parent / "matlab" / "matlab_comparison_ripple_detection.mat")
     )
@@ -836,8 +843,14 @@ def test_do_preprocessing_lfp_for_ripple_analysis_real_ripple() -> None:
     data = np.vstack(
         [data, data]
     )  # need to mimic an array with at leat two channels for the code to work
-
-    sm_envelope, _ = do_preprocessing_lfp_for_ripple_analysis(data, 2500, 0)
+    resting_ind = np.ones(data.shape[1], dtype=bool)
+    with patch(
+        "ripples.ripple_detection.check_for_noise_and_filter",
+        lambda data, y, z: data,
+    ):
+        sm_envelope, _ = do_preprocessing_lfp_for_ripple_analysis(
+            data, 2500, 0, resting_ind
+        )
 
     testing.assert_allclose(
         m["sm_envelope_m"][:, 1000:5500],
@@ -846,3 +859,82 @@ def test_do_preprocessing_lfp_for_ripple_analysis_real_ripple() -> None:
         atol=5,
     )
     # Set the absolute and relative tolerance of difference so that it should be just passing this test
+
+
+def test_check_for_noise_and_filter_no_noise() -> None:
+
+    t = np.arange(0, 1, 1 / 2500)
+    ripple = (
+        np.sin(2 * np.pi * 150 * t)
+        + 0.5 * np.sin(2 * np.pi * 50 * t)
+        + 0.5 * np.sin(2 * np.pi * 180 * t)
+    )
+    ripple = ripple + 1
+
+    data = np.concatenate(
+        (
+            np.ones(10000),
+            ripple,
+            np.ones(10000),  # load of ones to make the median 1
+        )
+    )
+
+    data = np.vstack(
+        [data, data, data, data, data]
+    )  # need to mimic an array with at five channels for the code to work
+
+    resting_ind = np.ones(data.shape[1], dtype=bool)
+
+    filtered_lfp = check_for_noise_and_filter(data, resting_ind, 2500)
+    assert np.all(filtered_lfp == data)
+
+
+def test_check_for_noise_and_filter_noise() -> None:
+
+    t = np.arange(0, 1, 1 / 2500)
+    ripple = (
+        np.sin(2 * np.pi * 150 * t)
+        + 0.25 * np.sin(2 * np.pi * 50 * t)
+        + 0.5 * np.sin(2 * np.pi * 180 * t)
+    )
+    ripple = ripple + 1
+
+    ripple_without_noise = np.sin(2 * np.pi * 150 * t) + 0.5 * np.sin(
+        2 * np.pi * 180 * t
+    )
+    ripple_without_noise = ripple_without_noise + 1
+
+    noise_t = np.arange(0, 4, 1 / 2500)
+    noise = 0.25 * np.sin(2 * np.pi * 50 * noise_t)
+    noise = noise + 1
+
+    data = np.concatenate(
+        (
+            noise,
+            ripple,
+            noise,
+        )
+    )
+
+    data_without_noise = np.concatenate(
+        (
+            np.ones(10000),
+            ripple_without_noise,
+            np.ones(10000),
+        )
+    )
+
+    data = np.vstack(
+        [data, data, data, data, data]
+    )  # need to mimic an array with at five channels for the code to work
+
+    resting_ind = np.ones(data.shape[1], dtype=bool)
+
+    filtered_lfp = check_for_noise_and_filter(data, resting_ind, 2500)
+    assert ~np.all(filtered_lfp == data)
+    testing.assert_allclose(
+        filtered_lfp[2, 2500:-2500],
+        data_without_noise[2500:-2500],
+        atol=0.0086055,
+        rtol=0.27867015,
+    )
