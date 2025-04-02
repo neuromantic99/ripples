@@ -46,6 +46,8 @@ from ripples.utils_npyx import load_lfp_npyx
 
 from ripples.process_spiking_data import get_good_unit_ids
 
+from ripples.waveforms import get_waveform_metrics
+
 REFERENCE_CHANNEL = 191  # For the long linear, change depending on probe
 
 UMBRELLA = Path("//128.40.224.64/marcbusche/Jana/Neuropixels")
@@ -195,6 +197,11 @@ def load_spikes(
     cluster_id_list = list(set(cluster_df["cluster_id"]))
     assert spike_cluster_list == cluster_id_list
 
+    waveforms = get_waveform_metrics(
+        str(UMBRELLA / kilosort_path), spike_times, spike_clusters
+    )
+    assert cluster_id_list == list(waveforms["unitIDs"])
+
     sys.path.append(str(UMBRELLA / kilosort_path))
     params = importlib.import_module("params")
     sys.path.remove(str(UMBRELLA / kilosort_path))
@@ -268,6 +275,29 @@ def load_spikes(
                 channel=int(channel_map[row["ch"].values[0]]),
                 depth=float(row["depth"].values[0]),
                 good_cluster=bool(row["good_unit"].values[0]),
+                aligned_wf=np.array(waveforms["aligned_wf"])[
+                    waveforms["unitIDs"] == cluster
+                ].tolist(),
+                wf_max_channel=int(
+                    waveforms["max_channel"][waveforms["unitIDs"] == cluster]
+                ),
+                waveform_mean_norm=np.array(waveforms["waveFormsMean_norm"])[
+                    waveforms["unitIDs"] == cluster
+                ].tolist(),
+                valley_to_peak_time=float(
+                    np.array(waveforms["trough_to_peak_time"])[
+                        waveforms["unitIDs"] == cluster
+                    ]
+                ),
+                halfwidth_at_third_max=float(
+                    np.array(waveforms["halfwidth_at_third_max"])[
+                        waveforms["unitIDs"] == cluster
+                    ]
+                ),
+                MFR_resting="None",
+                Firing_rate_modulation="None",
+                cell_type="None",
+                ripple_modulation="None",
             )
             assert len(spike_times[spike_clusters == cluster]) == int(
                 row["n_spikes"].values[0]
@@ -276,8 +306,6 @@ def load_spikes(
                 region_channel[int(cluster_info.depth / 20 - 1)] == cluster_info.region
             )
             all_data.append(cluster_info)
-
-    print("done")
 
     return all_data
 
@@ -391,7 +419,7 @@ def get_resting_periods(
     rotary_encoder: RotaryEncoder,
     max_time: float,
     pad: bool = True,
-) -> Tuple[np.ndarray, np.ndarray]:
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
 
     bin_size = 2500
     bin_edges_ind = np.arange(0, max_time, bin_size)
@@ -400,6 +428,9 @@ def get_resting_periods(
     for idx in range(len(bin_edges_ind) - 1):
         speed_bin = calculate_speed(idx, bin_edges_ind, rotary_encoder, bin_size)
         speed_cm_per_s = np.concatenate((speed_cm_per_s, np.full(bin_size, speed_bin)))
+
+    speed_per_sec_bin = np.array(speed_cm_per_s[0::2500])
+    resting_ind_sec_bin = pad_resting_ind(speed_per_sec_bin == 0, 1)
 
     last_idx = int(bin_edges_ind[-1])
     if max_time > last_idx:
@@ -417,9 +448,76 @@ def get_resting_periods(
     resting_ind = speed_cm_per_s == 0
     if pad:
         resting_ind_after_padding = pad_resting_ind(resting_ind, 2500)
-    assert len(resting_ind_after_padding) == max_time
+        assert len(resting_ind_after_padding) == max_time
+    else:
+        resting_ind_after_padding = resting_ind
 
-    return resting_ind_after_padding, speed_cm_per_s
+    return resting_ind_sec_bin, resting_ind_after_padding, speed_cm_per_s
+
+
+def get_resting_and_locomotion_periods(
+    resting_ind: np.ndarray,
+) -> Tuple[List[List[int]], List[List[int]], int, int, np.ndarray]:
+    split_indices = np.where(np.diff(resting_ind.astype(int)) != 0)[0] + 1
+    resting_periods = []
+    locomotion_periods = []
+    resting_time = 0
+    locomotion_time = 0
+    resting_ind_strict = np.full(len(resting_ind) + 1, 0, dtype=bool)
+    for behaviour_period in range(len(split_indices)):
+        if behaviour_period == 0:
+            if np.logical_and(resting_ind[0], split_indices[behaviour_period] > 1):
+                resting_periods.append([0, split_indices[behaviour_period]])
+                resting_time = resting_time + split_indices[behaviour_period]
+                resting_ind_strict[0 : split_indices[behaviour_period]] = 1
+            elif np.logical_and(
+                resting_ind[0] == False, split_indices[behaviour_period] > 1
+            ):
+                locomotion_periods.append([0, split_indices[behaviour_period]])
+                locomotion_time = locomotion_time + split_indices[behaviour_period]
+        else:
+            if np.logical_and(
+                resting_ind[split_indices[behaviour_period - 1]],
+                (split_indices[behaviour_period] - split_indices[behaviour_period - 1])
+                > 1,
+            ):
+                resting_periods.append(
+                    [
+                        split_indices[behaviour_period - 1],
+                        split_indices[behaviour_period],
+                    ]
+                )
+                resting_time = resting_time + (
+                    split_indices[behaviour_period]
+                    - split_indices[behaviour_period - 1]
+                )
+                resting_ind_strict[
+                    split_indices[behaviour_period - 1] : split_indices[
+                        behaviour_period
+                    ]
+                ] = 1
+            if np.logical_and(
+                resting_ind[split_indices[behaviour_period - 1]] == False,
+                (split_indices[behaviour_period] - split_indices[behaviour_period - 1])
+                > 1,
+            ):
+                locomotion_periods.append(
+                    [
+                        split_indices[behaviour_period - 1],
+                        split_indices[behaviour_period],
+                    ]
+                )
+                locomotion_time = locomotion_time + (
+                    split_indices[behaviour_period]
+                    - split_indices[behaviour_period - 1]
+                )
+    return (
+        resting_periods,
+        locomotion_periods,
+        int(resting_time),
+        int(locomotion_time),
+        resting_ind_strict,
+    )
 
 
 def load_channel_regions(channel_path: Path) -> List[str]:
@@ -446,10 +544,20 @@ def cache_session(metadata_probe: pd.Series) -> None:
     # load rotary encoder file
     rotary_encoder = load_rotary_encoder(Path(metadata_probe["Rotary encoder path"]))
     # identify resting periods based on running speed
-    resting_ind, speed_cm_per_s = get_resting_periods(rotary_encoder, lfp.shape[1])
+    resting_ind_seconds, resting_ind, speed_cm_per_s = get_resting_periods(
+        rotary_encoder, lfp.shape[1]
+    )
 
     resting_percentage = sum(resting_ind) / len(resting_ind)
     resting_time = sum(resting_ind) / sampling_rate_lfp
+
+    (
+        resting_periods,
+        locomotion_periods,
+        resting_time_strict,
+        locomotion_time_strict,
+        resting_ind_strict,
+    ) = get_resting_and_locomotion_periods(resting_ind_seconds)
 
     # pull out recording specific data from google sheets
     recording_id = f"{metadata_probe['Session']}-{metadata_probe['Recording Name']}-Probe{metadata_probe['Probe']}"
@@ -500,19 +608,13 @@ def cache_session(metadata_probe: pd.Series) -> None:
         write = csv.writer(f)
         write.writerow(region_channel)
 
-    # plot and save lfp spectrogram
-    plot_lfp_spectrogram(
-        lfp, resting_ind, region_channel, recording_id, sampling_rate_lfp
-    )
-
-    # load kilosort processed data (already preprocessed using matlab code & phy)
+    # load kilosort processed data (already preprocessed using matlab code)
     clusters_info = load_spikes(
         Path(metadata_probe["Kilosort path"]), region_channel, sync, sampling_rate_lfp
     )
     check_channel_order(clusters_info)
 
-
-    #ripple detection
+    # ripple detection
     all_CA1_channels = [
         idx
         for idx, region in enumerate(region_channel)
@@ -524,6 +626,16 @@ def cache_session(metadata_probe: pd.Series) -> None:
         bandpass_filter(lfp, RIPPLE_BAND[0], RIPPLE_BAND[1], sampling_rate_lfp, order=4)
     )
     max_powerChanCA1 = np.nanargmax(swr_power[all_CA1_channels])
+
+    # plot and save lfp spectrogram
+    plot_lfp_spectrogram(
+        lfp,
+        resting_ind,
+        region_channel,
+        recording_id,
+        sampling_rate_lfp,
+        all_CA1_channels[max_powerChanCA1],
+    )
 
     if max_powerChanCA1 - 2 < 0:
         max_powerChanCA1 = max_powerChanCA1 + 1
@@ -582,6 +694,7 @@ def cache_session(metadata_probe: pd.Series) -> None:
         lfp_detection_chans_CAR,
         detection_channels_ca1,
         resting_ind,
+        resting_ind_strict,
         sampling_rate_lfp,
         DETECTION_METHOD,
     )
@@ -634,17 +747,31 @@ def cache_session(metadata_probe: pd.Series) -> None:
     ripples_summary["ripple_CAR_check_lr"] = CAR_check_lr
     ripples_summary["ripple_SRP_check_lr"] = SRP_check_lr
 
+    unique_id = (
+        metadata_probe["Session"].split("_")[:3][2]
+        + "_"
+        + metadata_probe["Recording Name"]
+        + "_"
+        + metadata_probe["Session"].split("_")[:4][3]
+    )
     session: Session = Session(
         ripples_summary=RipplesSummary(**ripples_summary),
         clusters_info=clusters_info,
         id=metadata_probe["Session"],
         baseline=metadata_probe["Recording Name"],
+        unique_id=unique_id,
         length_seconds=lfp.shape[1] / sampling_rate_lfp,
         rms_per_channel=rms_per_channel,
         sampling_rate_lfp=sampling_rate_lfp,
         detection_method=DETECTION_METHOD,
         CA1_channels_analysed=detection_channels_ca1,
         CA1_channels_swr_pow=CA1_channels_swr_pow,
+        resting_ind=resting_ind.tolist(),
+        resting_ind_strict=resting_ind_strict.tolist(),
+        resting_periods_ind=resting_periods,
+        locomotion_periods_ind=locomotion_periods,
+        resting_time_strict=resting_time_strict,
+        locomotion_time_strict=locomotion_time_strict,
     )
 
     with open(
@@ -658,7 +785,11 @@ def main() -> None:
 
     reprocess = True
     metadata = gsheet2df("1HSERPbm-kDhe6X8bgflxvTuK24AfdrZJzbdBy11Hpcg", "sessions", 1)
-    metadata = metadata[metadata["test_4M"] == "TRUE"]
+    metadata = metadata[
+        # np.array(metadata["3M_cohort"] == "TRUE")
+        # + np.array(metadata["9M_cohort"] == "TRUE")
+        np.array(metadata["6M_cohort"] == "TRUE")
+    ]
     metadata = metadata[metadata["Ignore"] == "FALSE"]
     # metadata = metadata[metadata["Perfect_Peak"] == "Definitely"]
 
