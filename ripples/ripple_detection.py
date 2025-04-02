@@ -150,9 +150,28 @@ def remove_duplicate_ripples(
     return filtered_ripples
 
 
+def check_for_noise_and_filter(
+    lfp: np.ndarray, resting_ind: np.ndarray, sampling_rate: float
+) -> np.ndarray:
+    f, power = signal.welch(
+        lfp[2, resting_ind][0:5000], sampling_rate
+    )  # always take the highest ripple power channel to keep it consistent across channel in one recording
+    peaks, _ = signal.find_peaks(power)
+    if 49 in np.round(f[peaks]) or 50 in np.round(f[peaks]) or 51 in np.round(f[peaks]):
+        b, a = signal.iirnotch(50, 30, sampling_rate)
+        lfp = signal.filtfilt(b, a, lfp, axis=1)
+        print("50 Hz filtered LFP")
+    return lfp
+
+
 def do_preprocessing_lfp_for_ripple_analysis(
-    lfp: np.ndarray, sampling_rate: float, channel: int
+    lfp: np.ndarray,
+    sampling_rate: float,
+    channel: int,
+    resting_ind: np.ndarray,
 ) -> Tuple[np.ndarray, np.ndarray]:
+
+    lfp = check_for_noise_and_filter(lfp, resting_ind, sampling_rate)
     ripple_band_unsmoothed = compute_envelope(
         bandpass_filter(
             lfp[channel, :].reshape(1, lfp[channel, :].size),
@@ -172,12 +191,13 @@ def detect_ripple_events(
     lfp_det_chans: np.ndarray,
     detection_channels_ca1: List[int],
     resting_ind: np.ndarray,
+    resting_ind_strict: np.ndarray,
     sampling_rate: float,
     method: str,
 ) -> List[CandidateEvent]:
 
     ripple_band, ripple_band_unsmoothed = do_preprocessing_lfp_for_ripple_analysis(
-        lfp_det_chans, sampling_rate, channel
+        lfp_det_chans, sampling_rate, channel, resting_ind
     )
 
     assert len(ripple_band) == len(resting_ind)
@@ -190,7 +210,7 @@ def detect_ripple_events(
     elif method == "sd":
         sd = np.std(ripple_band[resting_ind])
         upper_threshold = sd * 5
-        lower_threshold = sd * 2.5
+        lower_threshold = sd * 2
 
     candidate_events: List[CandidateEvent] = []
 
@@ -231,14 +251,11 @@ def detect_ripple_events(
                 "welch",
             )
 
-            # save raw LFP around ripple
-            if start_event > 2500 & idx < (lfp_det_chans.shape[1] - 2500):
-                raw_lfp = lfp_det_chans[channel, peak_idx - 2500 : peak_idx + 2500]
-            else:
-                raw_lfp = []
-
             # only detect resting ripples
-            if np.all(resting_ind[start_event:idx]):
+            if np.logical_and(
+                resting_ind_strict[int(np.floor(start_event / sampling_rate))],
+                resting_ind_strict[int(np.floor(idx / sampling_rate))],
+            ):
                 candidate_events.append(
                     CandidateEvent(
                         onset=start_event,
@@ -251,7 +268,9 @@ def detect_ripple_events(
                         strength=float(
                             np.trapz(ripple_band_unsmoothed[start_event:idx].T)
                         ),
-                        raw_lfp=raw_lfp,
+                        raw_lfp=lfp_det_chans[
+                            channel, peak_idx - 2500 : peak_idx + 2500
+                        ].tolist(),
                     )
                 )
             peak_amp = (
@@ -265,6 +284,7 @@ def get_candidate_ripples(
     lfp_det_chans: np.ndarray,
     detection_channels_ca1: List[int],
     resting_ind: np.ndarray,
+    resting_ind_strict: np.ndarray,
     sampling_rate: float,
     detection_method: str,
 ) -> List[List[CandidateEvent]]:
@@ -276,6 +296,7 @@ def get_candidate_ripples(
             lfp_det_chans,
             detection_channels_ca1,
             resting_ind,
+            resting_ind_strict,
             sampling_rate,
             detection_method,
         )
