@@ -475,6 +475,30 @@ def get_resting_and_locomotion_periods(
             ):
                 locomotion_periods.append([0, split_indices[behaviour_period]])
                 locomotion_time = locomotion_time + split_indices[behaviour_period]
+        elif behaviour_period == len(split_indices) - 1:
+            if np.logical_and(
+                resting_ind[split_indices[behaviour_period]],
+                len(resting_ind) - split_indices[behaviour_period] > 1,
+            ):
+                resting_periods.append(
+                    [split_indices[behaviour_period], len(resting_ind)]
+                )
+                resting_time = resting_time + (
+                    len(resting_ind) - split_indices[behaviour_period]
+                )
+                resting_ind_strict[
+                    split_indices[behaviour_period] : len(resting_ind)
+                ] = 1
+            elif np.logical_and(
+                resting_ind[split_indices[behaviour_period]] == False,
+                len(resting_ind) - split_indices[behaviour_period] > 1,
+            ):
+                locomotion_periods.append(
+                    [split_indices[behaviour_period], len(resting_ind)]
+                )
+                locomotion_time = locomotion_time + (
+                    len(resting_ind) - split_indices[behaviour_period]
+                )
         else:
             if np.logical_and(
                 resting_ind[split_indices[behaviour_period - 1]],
@@ -716,7 +740,11 @@ def cache_session(metadata_probe: pd.Series) -> None:
 
     freq_check, CAR_check, SRP_check, CAR_check_lr, SRP_check_lr, ripples = (
         get_quality_metrics(
-            ripples, lfp_detection_chans_CAR, common_average, sampling_rate_lfp
+            ripples,
+            lfp_detection_chans_CAR,
+            common_average,
+            sampling_rate_lfp,
+            detection_channels_ca1,
         )
     )
 
@@ -724,6 +752,7 @@ def cache_session(metadata_probe: pd.Series) -> None:
         lfp.shape[1],
         ripples,
         resting_ind,
+        resting_ind_strict,
         speed_cm_per_s,
         sampling_rate_lfp,
         recording_id,
@@ -783,13 +812,18 @@ def cache_session(metadata_probe: pd.Series) -> None:
 
 def main() -> None:
 
-    reprocess = True
+    reprocess = False
     metadata = gsheet2df("1HSERPbm-kDhe6X8bgflxvTuK24AfdrZJzbdBy11Hpcg", "sessions", 1)
-    metadata = metadata[
-        # np.array(metadata["3M_cohort"] == "TRUE")
-        # + np.array(metadata["9M_cohort"] == "TRUE")
-        np.array(metadata["6M_cohort"] == "TRUE")
-    ]
+    metadata = metadata[metadata["3M_cohort"] == "TRUE"]
+    #     np.logical_and(
+    #         np.array(metadata["3M_cohort"] == "TRUE"),
+    #         np.array(metadata["Session"] == "WT_A_1423496_6M"),
+    #     )
+    #     # np.array(metadata["3M_cohort"] == "TRUE")
+    #     # + np.array(metadata["9M_cohort"] == "TRUE")
+    #     # np.array(metadata["6M_cohort"] == "TRUE")
+    #     # + np.array(metadata["9M_cohort"] == "TRUE")
+    # ]
     metadata = metadata[metadata["Ignore"] == "FALSE"]
     # metadata = metadata[metadata["Perfect_Peak"] == "Definitely"]
 
