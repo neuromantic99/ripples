@@ -18,10 +18,12 @@ from ripples.models import (
     SessionToAverage,
     CandidateEvent,
 )
-from ripples.waveforms import do_clustering_and_plot
+from ripples.waveforms import (
+    do_clustering_and_plot,
+    calculate_waveform_trough_to_peak_time_new,
+)
 
 from ripples.utils import (
-    mean_across_same_session,
     bandpass_filter,
     compute_envelope,
     mean_across_sessions,
@@ -30,14 +32,27 @@ import pywt
 from scipy import signal
 
 
+def calculate_mfr(
+    resting_periods: List[List[int]], spike_times: List[float], resting_time: float
+) -> float:
+    spikes_resting = []
+    for period in resting_periods:
+        spike_times = np.array(spike_times)
+        spikes_resting.append(
+            spike_times[
+                np.logical_and(spike_times > period[0], spike_times < period[1])
+            ]
+        )
+    spikes_resting = np.hstack(spikes_resting)
+    return float(len(spikes_resting) / resting_time)
+
+
 def do_clustering_and_save_cell_type(
     WTs: List[Session], NLGFs: List[Session], area_map: dict
 ) -> tuple[List[Session], List[Session], pd.DataFrame]:
 
     all_data = pd.DataFrame()
     all_genotypes = WTs + NLGFs
-    WTs = []
-    NLGFs = []
 
     num_clusters_per_session = [len(session.clusters_info) for session in all_genotypes]
     all_data["Cluster Index"] = np.arange(sum(num_clusters_per_session))
@@ -79,7 +94,7 @@ def do_clustering_and_save_cell_type(
     )
     all_data["region"] = np.hstack(
         [
-            cluster.region[0:3]
+            cluster.region[0:3].lower()
             for idx in range(len(all_genotypes))
             for cluster in all_genotypes[idx].clusters_info
         ]
@@ -138,20 +153,145 @@ def do_clustering_and_save_cell_type(
             for cluster in all_genotypes[idx].clusters_info
         ]
     )
+
+    all_data["New_PT"] = np.hstack(
+        [
+            calculate_waveform_trough_to_peak_time_new(cluster.waveform_mean_norm[0])
+            for idx in range(len(all_genotypes))
+            for cluster in all_genotypes[idx].clusters_info
+        ]
+    )
     all_data["cell_type"] = np.full(len(all_data), "", dtype=str)
     for area in area_map:
-        all_data_new = all_data[all_data["region"] == area.upper()]
+        all_data_new = all_data[all_data["region"] == area]
         cell_type = do_clustering_and_plot(all_data_new)
-        all_data.loc[all_data["region"] == area.upper(), "cell_type"] = cell_type
+        all_data.loc[all_data["region"] == area, "cell_type"] = cell_type
     plt.show()
 
-    for session in all_genotypes:
+    for session in WTs:
         session_df = all_data[all_data["unique_ID"] == session.unique_id]
+        row_ind = np.array(session_df["Cluster Index"])
         for cluster_idx, cluster in enumerate(session.clusters_info):
-            assert cluster.spike_times == session_df.loc[cluster_idx, "spike_times"]
-            cluster.cell_type = session_df.loc[cluster_idx, "cell_type"]
+            assert (
+                cluster.spike_times
+                == session_df.loc[row_ind[cluster_idx], "spike_times"]
+            )
+            cluster.cell_type = session_df.loc[row_ind[cluster_idx], "cell_type"]
+
+    for session in NLGFs:
+        session_df = all_data[all_data["unique_ID"] == session.unique_id]
+        row_ind = np.array(session_df["Cluster Index"])
+        for cluster_idx, cluster in enumerate(session.clusters_info):
+            assert (
+                cluster.spike_times
+                == session_df.loc[row_ind[cluster_idx], "spike_times"]
+            )
+            cluster.cell_type = session_df.loc[row_ind[cluster_idx], "cell_type"]
+
+    # calculate MFR
+    all_data["mfr_resting"] = np.hstack(
+        [
+            calculate_mfr(
+                all_genotypes[idx].resting_periods_ind,
+                cluster.spike_times,
+                all_genotypes[idx].resting_time_strict,
+            )
+            for idx in range(len(all_genotypes))
+            for cluster in all_genotypes[idx].clusters_info
+        ]
+    )
+    all_data["mfr_locomotion"] = np.hstack(
+        [
+            calculate_mfr(
+                all_genotypes[idx].locomotion_periods_ind,
+                cluster.spike_times,
+                all_genotypes[idx].locomotion_time_strict,
+            )
+            for idx in range(len(all_genotypes))
+            for cluster in all_genotypes[idx].clusters_info
+        ]
+    )
+
+    all_data["firing_rate_modulation"] = (
+        np.array(all_data["mfr_locomotion"]) - np.array(all_data["mfr_resting"])
+    ) / (np.array(all_data["mfr_locomotion"]) + np.array(all_data["mfr_resting"]))
 
     return WTs, NLGFs, all_data
+
+
+def plot_exc_inh_ratio(all_data: pd.DataFrame, area_map: dict) -> None:
+    unique_ids = np.unique(np.array(all_data["unique_ID"]))
+    for area in area_map:
+        df_region = all_data[all_data["region"] == area]
+        df_region["Idx"] = np.arange(0, len(df_region))
+        df_region.set_index("Idx")
+        plt.figure()
+        ax = sns.histplot(
+            df_region,
+            x="unique_ID",
+            hue="cell_type",
+            hue_order=["I", "E"],
+            multiple="dodge",
+            palette="ch:s=.25,rot=-.25",
+            shrink=0.5,
+        )
+        ax.tick_params(axis="x", labelsize=5)
+        plt.title(area_map[area])
+        percent_inhibitory = np.full(len(unique_ids), 0, dtype=float)
+        session_id = []
+        for idx, session in enumerate(unique_ids):
+            df_session = df_region[df_region["unique_ID"] == session]
+            session_id.append(np.array(df_session["ID"], dtype=str)[0])
+            percent_inhibitory[idx] = np.sum(
+                np.array(df_session["cell_type"] == "I")
+            ) / (
+                np.sum(np.array(df_session["cell_type"] == "I"))
+                + np.sum(np.array(df_session["cell_type"] == "E"))
+            )
+        data = mean_across_sessions(
+            [
+                SessionToAverage(session_id[session], percent_inhibitory[session])
+                for session in range(len(session_id))
+            ]
+        )
+        session_id = np.unique(session_id)
+        genotypes = np.array(
+            [
+                np.array(df_region["Genotype"][df_region["ID"] == int(session)])[0]
+                for session in session_id
+            ]
+        )
+
+        WT_data = data[genotypes == "WT"]
+        NLGF_data = data[genotypes == "NLGF"]
+        all_data_to_plot = [WT_data, NLGF_data]
+
+        shapiro_result_WT = stats.shapiro(WT_data)
+        shapiro_result_NLGF = stats.shapiro(NLGF_data)
+        if shapiro_result_WT.pvalue < 0.05 * shapiro_result_NLGF.pvalue < 0.05:
+            stat_results = stats.ttest_ind(
+                WT_data,
+                NLGF_data,
+            )
+            test = "t-test"
+        else:
+            test = "Mann-Whitney-U test"
+            stat_results = stats.mannwhitneyu(
+                WT_data,
+                NLGF_data,
+            )
+        plt.figure()
+        plt.title(
+            area_map[area] + "  " + test + ", p-value=" + str(stat_results.pvalue),
+            fontdict={"fontsize": 12},
+        )
+        plt.boxplot(
+            all_data_to_plot,
+            tick_labels=[
+                "WT(n=" + str(len(WT_data)) + ")",
+                "NLGF(n=" + str(len(NLGF_data)) + ")",
+            ],
+        )
 
 
 def count_spikes_around_ripple_simple(
@@ -185,62 +325,92 @@ def count_spikes_around_ripple_grouped(
     padding: float,
     num_bins: int,
     group: str,
-) -> np.ndarray:
+) -> Tuple[np.ndarray, float, float]:
 
     spiking_response_per_ripple_grouped = []
-    modulation = np.zeros(len(spike_times))
-    if group == "all_cells":
-        spiking_response_per_ripple_grouped = spike_times
-    else:
-        around_ripple_time = 0.7
-        ripple_duration = offset - onset
-        for cluster in range(len(spike_times)):
-            spike_times_cluster = spike_times[cluster]
+    firing_modulation = []
+    spikes_ripple = []
+    modulation = np.ones(len(spike_times))
+    around_ripple_time = 0.7
+    ripple_duration = offset - onset
+    for cluster in range(len(spike_times)):
+        spike_times_cluster = spike_times[cluster]
 
-            during_ripple = np.logical_and(
-                spike_times_cluster > onset, spike_times_cluster < offset
-            )
-            around_ripple = np.logical_and(
-                spike_times_cluster > onset - 1, spike_times_cluster < onset - 0.3
-            )
+        during_ripple = np.logical_and(
+            spike_times_cluster > onset,
+            spike_times_cluster < offset,
+        )
+        around_ripple = np.logical_and(
+            spike_times_cluster > (onset - 1),
+            spike_times_cluster < (onset - 0.3),
+        )
 
-            firing_during_ripple = during_ripple.sum() / ripple_duration
-            firing_around_ripple = around_ripple.sum() / around_ripple_time
+        firing_during_ripple = during_ripple.sum() / ripple_duration
+        firing_around_ripple = around_ripple.sum() / around_ripple_time
+        spikes_during = np.logical_and(
+            spike_times_cluster > peak_time - 0.3,
+            spike_times_cluster < peak_time + 0.3,
+        ).sum()
 
-            if firing_around_ripple > 0:
-                modulation[cluster] = (
-                    firing_during_ripple - firing_around_ripple
-                ) / firing_around_ripple
-                if group == "pos_responders":
-                    if modulation[cluster] > 0.5:
-                        spiking_response_per_ripple_grouped.append(spike_times_cluster)
-                if group == "neg_responders":
-                    if modulation[cluster] < -0.5:
-                        spiking_response_per_ripple_grouped.append(spike_times_cluster)
-            elif np.logical_and(firing_around_ripple == 0, firing_during_ripple > 0):
-                firing_around_ripple = 1
-                modulation[cluster] = (
-                    firing_during_ripple - firing_around_ripple
-                ) / firing_around_ripple
-                if group == "pos_responders":
-                    if modulation[cluster] > 0.5:
-                        spiking_response_per_ripple_grouped.append(spike_times_cluster)
-                if group == "neg_responders":
-                    if modulation[cluster] < -0.5:
-                        spiking_response_per_ripple_grouped.append(spike_times_cluster)
+        if np.logical_and(firing_around_ripple > 0, firing_during_ripple > 0):
+            modulation[cluster] = firing_during_ripple / firing_around_ripple
+        elif np.logical_and(firing_around_ripple == 0, firing_during_ripple > 0):
+            firing_around_ripple = 0.5
+            modulation[cluster] = firing_during_ripple / firing_around_ripple
+        elif np.logical_and(firing_around_ripple > 0, firing_during_ripple == 0):
+            firing_during_ripple = 0.5
+            modulation[cluster] = firing_during_ripple / firing_around_ripple
+
+        if group == "pos_responders":
+            if modulation[cluster] > 1.5:
+                spiking_response_per_ripple_grouped.append(spike_times_cluster)
+                firing_modulation.append(modulation[cluster])
+                spikes_ripple.append(spikes_during)
+        if group == "neg_responders":
+            if modulation[cluster] < (2 / 3):
+                spiking_response_per_ripple_grouped.append(spike_times_cluster)
+                firing_modulation.append(modulation[cluster])
+                spikes_ripple.append(spikes_during)
+        if group == "all_cells":
+            spiking_response_per_ripple_grouped.append(spike_times_cluster)
+            firing_modulation.append(modulation[cluster])
+            spikes_ripple.append(spikes_during)
 
     if not spiking_response_per_ripple_grouped:
         mean_spiking_response_per_ripple_grouped = np.empty(num_bins)
         mean_spiking_response_per_ripple_grouped[:] = None
+        modulation_mean = 1
+        mean_spikes_per_ripple = 0
     else:
         all_data = np.hstack(spiking_response_per_ripple_grouped)
         mean_spiking_response_per_ripple_grouped = count_spikes_around_ripple_simple(
             peak_time, all_data, padding, num_bins
         )
-    return mean_spiking_response_per_ripple_grouped
+        if sum(mean_spiking_response_per_ripple_grouped) == 0:
+            mean_spiking_response_per_ripple_grouped = np.empty(num_bins)
+            mean_spiking_response_per_ripple_grouped[:] = None
+            modulation_mean = 1
+            mean_spikes_per_ripple = 0
+        else:
+            mean_spiking_response_per_ripple_grouped = ndimage.gaussian_filter1d(
+                mean_spiking_response_per_ripple_grouped
+                / len(spiking_response_per_ripple_grouped)
+                * 100,
+                0.42,
+            )  # slight filter, normalize with number of clusters and multiple by 100 to get firing rate in Hertz
+            assert sum(mean_spiking_response_per_ripple_grouped) > 0
+            modulation_mean = np.nanmean(firing_modulation)
+            mean_spikes_per_ripple = np.nanmean(spikes_ripple)
+    return (
+        mean_spiking_response_per_ripple_grouped,
+        modulation_mean,
+        mean_spikes_per_ripple,
+    )
 
 
-def calculate_spiking_response(session: Session, ind_area: List[int]) -> np.ndarray:
+def calculate_spiking_response(
+    session: Session, ind_area: List[int], cell_type: str
+) -> np.ndarray:
 
     num_ripples = len(
         [
@@ -279,6 +449,10 @@ def calculate_spiking_response(session: Session, ind_area: List[int]) -> np.ndar
         session.clusters_info[cluster]
         for cluster in range(len(session.clusters_info))
         if cluster in ind_area
+        if np.logical_or(
+            session.clusters_info[cluster].cell_type == cell_type, cell_type == "A"
+        )
+        if session.clusters_info[cluster].good_cluster == True
     ]
     num_clusters = len(area_clusters)
     response = np.zeros((num_ripples, num_clusters), dtype=bool)
@@ -311,33 +485,40 @@ def calculate_spiking_response(session: Session, ind_area: List[int]) -> np.ndar
                 ) / firing_around_ripple
             else:
                 response_percent_change[ripple_ind, cluster_idx] = 0
+
             response[ripple_ind, cluster_idx] = np.logical_or(
                 response_percent_change[ripple_ind, cluster_idx] > 0.5,
                 response_percent_change[ripple_ind, cluster_idx] < -0.5,
             )
 
     # calculate for each ripple percentage of cells responding with a 20% change in firing rate during the ripple compared to the firing around the ripple
-    response_per_ripple = sum(response.T) / num_clusters
-    percentage_increasing_cells = np.array(
-        [sum(ripple > 0.5) / num_clusters for ripple in response_percent_change]
-    )
-    percentage_decreasing_cells = np.array(
-        [sum(ripple < -0.5) / num_clusters for ripple in response_percent_change]
-    )
-    percentage_non_responding_cells = np.array(
-        [
-            sum(np.logical_and(ripple <= 0.5, ripple >= -0.5)) / num_clusters
-            for ripple in response_percent_change
-        ]
-    )
-    percentages_response = [
-        [
-            percentage_increasing_cells[ripple_idx],
-            percentage_decreasing_cells[ripple_idx],
-            percentage_non_responding_cells[ripple_idx],
-        ]
-        for ripple_idx in range(num_ripples)
-    ]
+    if num_clusters == 0:
+        response_per_ripple = np.full((num_ripples, 1), 0.0, dtype=float)
+        percentages_response = np.full((num_ripples, 3), [0.0, 0.0, 0.0])
+    else:
+        response_per_ripple = sum(response.T) / num_clusters
+        percentage_increasing_cells = np.array(
+            [sum(ripple > 0.5) / num_clusters for ripple in response_percent_change]
+        )
+        percentage_decreasing_cells = np.array(
+            [sum(ripple < -0.5) / num_clusters for ripple in response_percent_change]
+        )
+        percentage_non_responding_cells = np.array(
+            [
+                sum(np.logical_and(ripple <= 0.5, ripple >= -0.5)) / num_clusters
+                for ripple in response_percent_change
+            ]
+        )
+        percentages_response = np.vstack(
+            [
+                [
+                    percentage_increasing_cells[ripple_idx],
+                    percentage_decreasing_cells[ripple_idx],
+                    percentage_non_responding_cells[ripple_idx],
+                ]
+                for ripple_idx in range(num_ripples)
+            ]
+        )
 
     result = np.hstack(
         (response_per_ripple.reshape(num_ripples, 1), np.array(percentages_response))
@@ -383,6 +564,7 @@ def build_dataframe_per_ripple(
     area_map: dict,
     groups: List[str],
     padding_in_seconds: float,
+    cell_types: dict,
 ) -> pd.DataFrame:
 
     all_data = pd.DataFrame()
@@ -547,39 +729,52 @@ def build_dataframe_per_ripple(
         for session in all_genotypes
     ]
 
-    for area in area_map:
-        ind_area = [
-            get_clusters_ind_per_region(session, area) for session in all_genotypes
-        ]
-        spike_times_per_session = [
-            [
-                np.array(cluster.spike_times)
-                for cluster in all_genotypes[session_idx].clusters_info[
-                    min(ind_area[session_idx]) : max(ind_area[session_idx])
-                ]
-            ]
-            for session_idx in range(len(all_genotypes))
-        ]
+    # get spiking around ripples for Exc vs Inh cells, for each brain region seperately differentiated in pos/neg responders or all_cells
+    # only include clusters that meet quality metrics
 
-        response_per_ripple = np.vstack(
-            [
-                calculate_spiking_response(
-                    all_genotypes[session_idx], ind_area[session_idx]
-                )
+    for area in area_map:
+        for cell_type in cell_types:
+            ind_area = [
+                get_clusters_ind_per_region(session, area) for session in all_genotypes
+            ]
+            spike_times_per_session = [
+                [
+                    np.array(cluster.spike_times)
+                    for cluster in all_genotypes[session_idx].clusters_info[
+                        min(ind_area[session_idx]) : max(ind_area[session_idx])
+                    ]
+                    if np.logical_or(cluster.cell_type == cell_type, cell_type == "A")
+                    if cluster.good_cluster == True
+                ]
                 for session_idx in range(len(all_genotypes))
             ]
-        )
 
-        all_data["Percentage_all_resp_" + area_map[area]] = response_per_ripple[:, 0]
-        all_data["Percentage_pos_resp_" + area_map[area]] = response_per_ripple[:, 1]
-        all_data["Percentage_neg_resp_" + area_map[area]] = response_per_ripple[:, 2]
-        all_data["Percentage_non_resp_" + area_map[area]] = response_per_ripple[:, 3]
-
-        num_bins = int(padding_in_seconds * 2 * 100)  # 10ms bins
-
-        for group in groups:
-            all_data["Spiking_response_" + area_map[area] + "_" + group] = np.vstack(
+            response_per_ripple = np.vstack(
                 [
+                    calculate_spiking_response(
+                        all_genotypes[session_idx], ind_area[session_idx], cell_type
+                    )
+                    for session_idx in range(len(all_genotypes))
+                ]
+            )
+
+            all_data[
+                "Percentage_all_resp_" + area_map[area] + "_" + cell_types[cell_type]
+            ] = response_per_ripple[:, 0]
+            all_data[
+                "Percentage_pos_resp_" + area_map[area] + "_" + cell_types[cell_type]
+            ] = response_per_ripple[:, 1]
+            all_data[
+                "Percentage_neg_resp_" + area_map[area] + "_" + cell_types[cell_type]
+            ] = response_per_ripple[:, 2]
+            all_data[
+                "Percentage_non_resp_" + area_map[area] + "_" + cell_types[cell_type]
+            ] = response_per_ripple[:, 3]
+
+            num_bins = int(padding_in_seconds * 2 * 100)  # 10ms bins
+
+            for group in groups:
+                results_spiking = [
                     [
                         count_spikes_around_ripple_grouped(
                             event.peak_idx
@@ -597,14 +792,36 @@ def build_dataframe_per_ripple(
                     ]
                     for session_idx in range(len(all_genotypes))
                 ]
-            ).tolist()
 
-            all_data["Peak_response_" + area_map[area] + "_" + group] = [
-                element[int(padding_in_seconds * num_bins)]
-                for element in np.array(
-                    all_data["Spiking_response_" + area_map[area] + "_" + group]
-                )
-            ]
+                all_data[
+                    "Spiking_response_"
+                    + area_map[area]
+                    + "_"
+                    + group
+                    + "_"
+                    + cell_types[cell_type]
+                ] = np.vstack(
+                    [array[0] for session in results_spiking for array in session]
+                ).tolist()
+
+                all_data[
+                    "Firing_Modulation_idx_"
+                    + area_map[area]
+                    + "_"
+                    + group
+                    + "_"
+                    + cell_types[cell_type]
+                ] = [array[1] for session in results_spiking for array in session]
+
+                all_data[
+                    "Mean_spikes_per_ripple_"
+                    + area_map[area]
+                    + "_"
+                    + group
+                    + "_"
+                    + cell_types[cell_type]
+                ] = [array[2] for session in results_spiking for array in session]
+
     return all_data
 
 
@@ -612,29 +829,64 @@ def plot_heatmap_firing_around_ripple_per_session(
     all_data: pd.DataFrame, area: str, padding_seconds: float
 ) -> None:
     session_id = all_data["unique_ID"].unique()
+    cell_types = ["Inhibitory", "Excitatory"]
     for session in session_id:
-        x_axis = np.linspace(
-            -padding_seconds, padding_seconds, int(padding_seconds * 2 * 100)
-        )
-        ripple_num = len(all_data[all_data["unique_ID"] == session])
-        y_axis = np.linspace(1, ripple_num + 1, ripple_num)
-        X, Y = np.meshgrid(x_axis, y_axis)
-        plt.figure()
-        plt.pcolor(
-            X,
-            Y,
-            [
-                np.array(all_data["Spiking_response_" + area + "_all_cells"][ripple])
-                for ripple in range(len(all_data))
-                if all_data["unique_ID"][ripple] == session
-                if not np.isnan(
-                    sum(all_data["Spiking_response_" + area + "_all_cells"][ripple])
+        for cell_type in cell_types:
+            x_axis = np.linspace(
+                -padding_seconds, padding_seconds, int(padding_seconds * 2 * 100)
+            )
+            ripple_num = np.sum(
+                ~np.isnan(
+                    np.sum(
+                        np.vstack(
+                            all_data[
+                                "Spiking_response_"
+                                + area
+                                + "_pos_responders_"
+                                + cell_type
+                            ][all_data["unique_ID"] == session]
+                        ),
+                        axis=1,
+                    )
                 )
-            ],
-        )
-        plt.title(area + session)
-        plt.xlabel("time (sec)")
-        plt.ylabel("Ripple Number")
+            )
+            if ripple_num == 0:
+                continue
+            y_axis = np.linspace(1, ripple_num + 1, ripple_num)
+            X, Y = np.meshgrid(x_axis, y_axis)
+            plt.figure()
+            plt.pcolor(
+                X,
+                Y,
+                stats.zscore(
+                    [
+                        np.array(
+                            all_data[
+                                "Spiking_response_"
+                                + area
+                                + "_pos_responders_"
+                                + cell_type
+                            ][ripple]
+                        )
+                        for ripple in range(len(all_data))
+                        if all_data["unique_ID"][ripple] == session
+                        if not np.isnan(
+                            sum(
+                                all_data[
+                                    "Spiking_response_"
+                                    + area
+                                    + "_pos_responders_"
+                                    + cell_type
+                                ][ripple]
+                            )
+                        )
+                    ],
+                    axis=1,
+                ),
+            )
+            plt.title(area + session + "  " + cell_type)
+            plt.xlabel("time (sec)")
+            plt.ylabel("Ripple Number")
     plt.show()
 
 
@@ -680,131 +932,89 @@ def smooth_ripple_triggered_average_gaussian(stacked_trials: np.ndarray) -> np.n
 
 
 def plot_firing_around_ripple_MUA_per_ripple_first(
-    all_data: pd.DataFrame, area_map: dict, groups: List[str], padding_seconds: float
+    all_data: pd.DataFrame,
+    area_map: dict,
+    groups: List[str],
+    padding_seconds: float,
+    cell_types: dict,
 ) -> None:
     anims = all_data["unique_ID"].unique()
     genotypes = np.full(len(anims), str)
     anim_id = np.full(len(anims), str)
 
     for group in groups:
-        plt.figure()
-        plt.suptitle(group)
-        n = 0
-        for area in area_map:
-            n = n + 1
-            ind = -1
-            mean_ripple_response = np.full((len(anims), 100), 0, dtype=float)
-            for anim in anims:
-                ind = ind + 1
-                genotypes[ind] = np.array(
-                    all_data["Genotype"][all_data["unique_ID"] == anim]
-                )[0]
-                anim_id[ind] = np.array(all_data["ID"][all_data["unique_ID"] == anim])[
-                    0
-                ]
-
-                mean_ripple_response[ind, :] = np.nanmean(
-                    stats.zscore(
-                        smooth_ripple_triggered_average_gaussian(
-                            np.vstack(
-                                np.array(
-                                    all_data[
-                                        "Spiking_response_"
-                                        + area_map[area]
-                                        + "_"
-                                        + group
-                                    ]
-                                )[np.array(all_data["unique_ID"] == anim)]
-                            ),
-                        ),
-                        axis=1,
-                    ),
-                    axis=0,
+        for cell_type in cell_types:
+            plt.figure()
+            plt.suptitle(group)
+            n = 0
+            for area in area_map:
+                n = n + 1
+                ind = -1
+                mean_ripple_response = np.full(
+                    (len(anims), int(padding_seconds * 2 * 100)), 0, dtype=float
                 )
+                for anim in anims:
+                    ind = ind + 1
+                    genotypes[ind] = np.array(
+                        all_data["Genotype"][all_data["unique_ID"] == anim]
+                    )[0]
+                    anim_id[ind] = np.array(
+                        all_data["ID"][all_data["unique_ID"] == anim]
+                    )[0]
 
-            assert len(mean_ripple_response) == len(genotypes)
-            plt.subplot(1, 3, n)
-            plt.title(area_map[area])
-            plot_ripple_triggered_spikes(
-                mean_ripple_response[genotypes == "WT"],
-                area_map[area],
-                "blue",
-                anim_id[genotypes == "WT"],
-                padding_seconds=padding_seconds,
-            )
-            plot_ripple_triggered_spikes(
-                mean_ripple_response[genotypes == "NLGF"],
-                area_map[area],
-                "red",
-                anim_id[genotypes == "NLGF"],
-                padding_seconds=padding_seconds,
-            )
-            plt.ylabel("Firing Rate (z-score)")
-            plt.xlabel("Time from ripple (s)")
+                    mean_ripple_response[ind, :] = np.nanmean(
+                        stats.zscore(
+                            smooth_ripple_triggered_average_gaussian(
+                                np.vstack(
+                                    np.array(
+                                        all_data[
+                                            "Spiking_response_"
+                                            + area_map[area]
+                                            + "_"
+                                            + group
+                                            + "_"
+                                            + cell_types[cell_type]
+                                        ]
+                                    )[np.array(all_data["unique_ID"] == anim)]
+                                ),
+                            ),
+                            axis=1,
+                        ),
+                        axis=0,
+                    )
+
+                assert len(mean_ripple_response) == len(genotypes)
+                plt.subplot(1, len(area_map), n)
+                plt.title(area_map[area] + "  " + cell_types[cell_type])
+                plot_ripple_triggered_spikes(
+                    mean_ripple_response[genotypes == "WT"],
+                    area_map[area],
+                    "blue",
+                    anim_id[genotypes == "WT"],
+                    padding_seconds=padding_seconds,
+                )
+                plot_ripple_triggered_spikes(
+                    mean_ripple_response[genotypes == "NLGF"],
+                    area_map[area],
+                    "red",
+                    anim_id[genotypes == "NLGF"],
+                    padding_seconds=padding_seconds,
+                )
+                plt.ylabel("Firing Rate (z-score)")
+                plt.xlabel("Time from ripple (s)")
 
 
 def plot_distributions_violins_anim_means_per_characteristic(
     all_data: pd.DataFrame,
+    characteristics: List[str],
+    y_labels: List[str],
+    title: str = "",
 ) -> None:
-    characteristics = [
-        "Amplitude",
-        "Strength",
-        "Frequency",
-        "Duration",
-        "Percentage_all_resp_ca1",
-        "Percentage_all_resp_retrosplenial",
-        "Percentage_all_resp_dentate",
-        "Percentage_pos_resp_ca1",
-        "Percentage_pos_resp_retrosplenial",
-        "Percentage_pos_resp_dentate",
-        "Percentage_neg_resp_ca1",
-        "Percentage_neg_resp_retrosplenial",
-        "Percentage_neg_resp_dentate",
-        "Percentage_non_resp_ca1",
-        "Percentage_non_resp_retrosplenial",
-        "Percentage_non_resp_dentate",
-        "Peak_response_ca1_neg_responders",
-        "Peak_response_retrosplenial_neg_responders",
-        "Peak_response_dentate_neg_responders",
-        "Peak_response_ca1_pos_responders",
-        "Peak_response_retrosplenial_pos_responders",
-        "Peak_response_dentate_pos_responders",
-        "Peak_response_ca1_all_cells",
-        "Peak_response_retrosplenial_all_cells",
-        "Peak_response_dentate_all_cells",
-    ]
-    ylabels = [
-        "$\mu$V",
-        "AU",
-        "Hz",
-        "ms",
-        "AU",
-        "AU",
-        "AU",
-        "Percent",
-        "Percent",
-        "Percent",
-        "Percent",
-        "Percent",
-        "Percent",
-        "Percent",
-        "Percent",
-        "Percent",
-        "Mean firing rate [Hz]",
-        "Mean firing rate [Hz]",
-        "Mean firing rate [Hz]",
-        "Mean firing rate [Hz]",
-        "Mean firing rate [Hz]",
-        "Mean firing rate [Hz]",
-        "Mean firing rate [Hz]",
-        "Mean firing rate [Hz]",
-        "Mean firing rate [Hz]",
-    ]
 
     for plots in range(len(characteristics)):
         plt.figure()
-        plt.suptitle(characteristics[plots])
-        sns.kdeplot(data=all_data, x=characteristics[plots], hue="Genotype")
+        plt.suptitle(characteristics[plots] + ", " + title)
+        sns.kdeplot(data=all_data, x=characteristics[plots], hue="ID", palette="pastel")
 
         model = smf.mixedlm(
             characteristics[plots] + " ~ Genotype",
@@ -816,7 +1026,7 @@ def plot_distributions_violins_anim_means_per_characteristic(
         mdf = model.fit()
 
         plt.figure()
-        plt.suptitle(characteristics[plots])
+        plt.suptitle(characteristics[plots] + ", " + title)
         plt.subplot(1, 2, 1)
         plt.title(
             "LME-Model p-value:" + str(mdf.pvalues["Genotype[T.WT]"]),
@@ -842,7 +1052,7 @@ def plot_distributions_violins_anim_means_per_characteristic(
         #     size=0.5,
         #     color="black",
         # )
-        plt.ylabel(ylabels[plots])
+        plt.ylabel(y_labels[plots])
         plt.legend()
         plt.tight_layout()
 
@@ -882,7 +1092,7 @@ def plot_distributions_violins_anim_means_per_characteristic(
             )
         plt.subplot(1, 2, 2)
         plt.title(
-            +", " + test + ", p-value=" + str(stat_results.pvalue),
+            test + ", p-value=" + str(stat_results.pvalue),
             fontdict={"fontsize": 7},
         )
         plt.boxplot(
@@ -893,6 +1103,27 @@ def plot_distributions_violins_anim_means_per_characteristic(
             ],
         )
         plt.tight_layout
+
+
+def plot_cluster_characteristics(
+    all_data: pd.DataFrame,
+    area_map: dict,
+    characteristics: List[str],
+    y_labels: List[str],
+) -> None:
+    groups = {"E": "Excitatory", "I": "Inhibitory"}
+    for area in area_map:
+        dataframe = all_data[all_data["region"] == area]
+        dataframe = dataframe[dataframe["quality_metrics"] == True]
+        for group in groups:
+            dataframe_to_analyse = dataframe[dataframe["cell_type"] == group]
+            title = area_map[area] + ", " + groups[group]
+            plot_distributions_violins_anim_means_per_characteristic(
+                dataframe_to_analyse, characteristics, y_labels, title
+            )
+            plt.figure()
+            plt.plot(np.vstack(dataframe_to_analyse["aligned_waveforms"]).T)
+            plt.title(area_map[area] + ", " + groups[group])
 
 
 def plot_correlations(
@@ -920,7 +1151,7 @@ def plot_correlations(
                     all_data_new["Genotype"] == "NLGF"
                 ],
             )
-            # plt.subplot(2, 3, ind_resp + 1)
+
             sns.lmplot(
                 x=characteristics_ripples[ind],
                 y=characteristics_response[ind_resp],
@@ -991,7 +1222,9 @@ def mean_across_ripples(
             if event
         ]
     )
-    mean_firing_around_ripples = np.empty((len(session.clusters_info), 100))
+    mean_firing_around_ripples = np.empty(
+        (len(session.clusters_info), (padding * 2 * 100))
+    )
     for cluster in range(len(session.clusters_info)):
         mean_firing_around_ripples[cluster] = count_spikes_around_ripple(
             all_ripple_times,
@@ -1048,7 +1281,7 @@ def plot_ripple_triggered_firing_per_cluster_first(
         mean_across_ripples(session, padding, area_map, plot=False) for session in NLGFs
     ]
 
-    fig = plt.figure(figsize=(4 * 3, 4))
+    fig = plt.figure(figsize=(4 * len(area_map), 4))
     n = 0
     for area in area_map:
         n = n + 1
@@ -1087,7 +1320,7 @@ def plot_ripple_triggered_firing_per_cluster_first(
 
         session_id_NLGFs = [session.id for session in NLGFs]
 
-        plt.subplot(1, 3, n)
+        plt.subplot(1, len(area_map), n)
         plot_ripple_triggered_spikes(
             mean_per_session_WTs,
             area,
@@ -1145,6 +1378,7 @@ def plot_ripple_raw(
     scales = np.logspace(np.log10(scales.min()), np.log10(scales.max()), num=100)
     cwtm, freqs = pywt.cwt(raw, scales, "cmor2.5-1.5", sampling_period=1 / fs)
     cwtm /= np.max(np.abs(cwtm))
+
     axs[0].pcolormesh(
         time,
         freqs[0:50],
@@ -1170,7 +1404,6 @@ def plot_ripple_raw(
         f"onset: {onset_time/sampling_rate}",
         fontdict=font,
     )
-    plt.show()
     plt.tight_layout()
 
     if session_id:
@@ -1185,6 +1418,15 @@ def plot_ripple_raw_session(all_mice: List[Session]) -> None:
 
     for rec in range(len(all_mice)):
         idx = range(len(all_mice[rec].ripples_summary.events))
+        figure_path = (
+            RESULTS_PATH
+            / "figures"
+            / "ripples"
+            / all_mice[rec].id
+            / all_mice[rec].baseline
+        )
+        if figure_path.exists():
+            continue
         for n in idx:
             if not all_mice[rec].ripples_summary.events[n]:
                 continue
@@ -1207,6 +1449,13 @@ def plot_ripple_raw_session(all_mice: List[Session]) -> None:
 def plot_ripple_frequency_spectrum(all_mice: List[Session]) -> None:
     for rec in range(len(all_mice)):
         idx = range(len(all_mice[rec].ripples_summary.events))
+        figure_path = (
+            RESULTS_PATH
+            / "figures"
+            / "ripples_freq_spectrum"
+            / all_mice[rec].id
+            / all_mice[rec].baseline
+        )
         for n in idx:
             if not all_mice[rec].ripples_summary.events[n]:
                 continue
@@ -1224,28 +1473,26 @@ def plot_ripple_frequency_spectrum(all_mice: List[Session]) -> None:
                     (500 + onset_time - peak_time) : (500 + offset_time - peak_time)
                 ]
                 [f, Pxx] = signal.periodogram(ripple, all_mice[rec].sampling_rate_lfp)
-                max_idx = np.argmax(Pxx.reshape(len(f), 1).tolist())
-                max_freq = f[max_idx]
-                max_val = (Pxx.reshape(len(f), 1)).tolist()[max_idx]
-                max_val = max_val[0]
-                ev_freq = all_mice[rec].ripples_summary.events[n].frequency
-                peaks, _ = signal.find_peaks(Pxx, height=0.25 * max_val)
+
                 plt.figure()
-                plt.plot(f, Pxx.reshape(len(f), 1))
-                plt.plot(max_freq, max_val, "ro")
-                plt.plot(f[peaks], Pxx[peaks], "bx")
                 font = {"size": 10}
-                plt.title(
-                    f"Peak frequencies: {f[peaks]}; Ripple frequency: {ev_freq}",
-                    fontdict=font,
-                )
-                figure_path = (
-                    RESULTS_PATH
-                    / "figures"
-                    / "ripples_freq_spectrum"
-                    / f"{all_mice[rec].id}"
-                    / f"{rec}"
-                )
+                plt.plot(f, Pxx.reshape(len(f), 1))
+                if Pxx.reshape(len(f), 1).tolist():
+                    max_idx = np.argmax(Pxx.reshape(len(f), 1).tolist())
+                    max_freq = f[max_idx]
+                    max_val = (Pxx.reshape(len(f), 1)).tolist()[max_idx]
+                    max_val = max_val[0]
+                    ev_freq = all_mice[rec].ripples_summary.events[n].frequency
+                    peaks, _ = signal.find_peaks(Pxx, height=0.25 * max_val)
+                    plt.plot(max_freq, max_val, "ro")
+                    plt.plot(f[peaks], Pxx[peaks], "bx")
+                    plt.title(
+                        f"Peak frequencies: {f[peaks]}; Ripple frequency: {ev_freq}",
+                        fontdict=font,
+                    )
+                else:
+                    plt.title("No peaks detected")
+
                 if not figure_path.exists():
                     os.makedirs(figure_path)
 
@@ -1272,7 +1519,7 @@ def number_of_spikes_per_cell_per_ripple(session: Session) -> float:
     spikes_per_ripple = np.zeros(len(session.clusters_info))
 
     for cluster_idx, cluster in enumerate(session.clusters_info):
-        if cluster.info != ClusterType.GOOD or cluster.region != "CA1":
+        if cluster.good_cluster != True or cluster.region != "CA1":
             continue
 
         spike_times = np.array(cluster.spike_times)
@@ -1303,7 +1550,7 @@ def spikes_per_ripple(WTs: List[Session], NLGFs: List[Session]) -> None:
     """(B) The number of spikes per SWR event, per cell
     (over all cells that fired at least one spike during at least one SWR event)."""
 
-    wt_data = mean_across_same_session(
+    wt_data = mean_across_sessions(
         [
             SessionToAverage(
                 session.id,
@@ -1313,7 +1560,7 @@ def spikes_per_ripple(WTs: List[Session], NLGFs: List[Session]) -> None:
         ]
     )
 
-    nlgf_data = mean_across_same_session(
+    nlgf_data = mean_across_sessions(
         [
             SessionToAverage(
                 session.id,
@@ -1333,14 +1580,54 @@ def spikes_per_ripple(WTs: List[Session], NLGFs: List[Session]) -> None:
 
 
 def get_ripple_rate(session: Session) -> float:
-    resting_seconds = (
-        session.length_seconds * session.ripples_summary.resting_percentage
-    )
+    resting_seconds = sum(session.resting_ind_strict)
 
     return (
         len([event.peak_idx for event in session.ripples_summary.events if event])
         / resting_seconds
     )
+
+
+def number_of_ripples_plot(WTs: List[Session], NLGFs: List[Session]) -> None:
+
+    plt.figure()
+    wt_data = mean_across_sessions(
+        [SessionToAverage(session.id, get_ripple_rate(session)) for session in WTs]
+    )
+    ids = np.array([session.id for session in WTs])
+    print("WT,ripple rate", ids)
+    print("WT", wt_data)
+
+    nlgf_data = mean_across_sessions(
+        [SessionToAverage(session.id, get_ripple_rate(session)) for session in NLGFs]
+    )
+    nIDs = np.array([session.id for session in NLGFs])
+    print("NLGF", nIDs)
+    print("NLGF", nlgf_data)
+
+    sns.stripplot({"WTs": wt_data, "NLGFs": nlgf_data}, color="black")
+    sns.boxplot({"WTs": wt_data, "NLGFs": nlgf_data})
+    plt.ylabel("Resting ripple rate (Hz)")
+    plt.tight_layout()
+    plt.savefig(RESULTS_PATH / "figures" / "resting_ripple_rate.png")
+
+    all_genotypes = WTs + NLGFs
+    all_data = [get_ripple_rate(session) for session in all_genotypes]
+    all_data_noise = [
+        np.nanmean(
+            session.rms_per_channel[
+                int(np.median(session.CA1_channels_analysed) - 10) : int(
+                    np.median(session.CA1_channels_analysed) + 10
+                )
+            ]
+        )
+        for session in all_genotypes
+    ]
+
+    plt.figure()
+    plt.scatter(all_data, all_data_noise)
+    plt.xlabel("Resting ripple rate (Hz)")
+    plt.ylabel("Noise Level (AU)")
 
 
 def resting_time_ripple_rate_correlation(
@@ -1349,10 +1636,7 @@ def resting_time_ripple_rate_correlation(
     plt.figure()
     all_mice = WTs + NLGFs
     plt.plot(
-        [
-            session.length_seconds * session.ripples_summary.resting_percentage
-            for session in all_mice
-        ],
+        [(sum(session.resting_ind_strict)) for session in all_mice],
         [get_ripple_rate(session) for session in all_mice],
         ".",
     )
@@ -1403,6 +1687,9 @@ def filter_ripples(
 ) -> tuple[List[Session], List[Session]]:
 
     for session in range(len(WTs)):
+        assert len(WTs[session].ripples_summary.ripple_SRP_check) == len(
+            WTs[session].ripples_summary.events
+        )
         for n in range(len(WTs[session].ripples_summary.ripple_SRP_check)):
             if (
                 np.array(WTs[session].ripples_summary.ripple_SRP_check[n])
@@ -1412,6 +1699,9 @@ def filter_ripples(
             ) == False:
                 WTs[session].ripples_summary.events[n] = []
     for session in range(len(NLGFs)):
+        assert len(NLGFs[session].ripples_summary.ripple_SRP_check) == len(
+            NLGFs[session].ripples_summary.events
+        )
         for n in range(len(NLGFs[session].ripples_summary.ripple_SRP_check)):
             if (
                 np.array(NLGFs[session].ripples_summary.ripple_SRP_check[n])
@@ -1454,55 +1744,69 @@ def main() -> None:
 
     condition = ["6M", "A"]
     WTs, NLGFs = load_sessions(condition)
-    area_map = {"dg-": "dentate", "ca1": "ca1", "rsp": "retrosplenial"}
-    cluster_dataframe, WTs, NLGFs = do_clustering_and_save_cell_type(
+    # plot_noise_levels(WTs, NLGFs)
+
+    area_map = {
+        "dg-": "dentate",
+        "ca1": "ca1",
+        "rsp": "retrosplenial",
+        "pf": "thalamus",
+    }
+    groups = ["pos_responders", "neg_responders", "all_cells"]
+    cell_types = {"E": "Excitatory", "I": "Inhibitory", "A": "all_cells"}
+    padding_firing_around_ripples = 1  # in seconds
+
+    WTs, NLGFs, cluster_dataframe = do_clustering_and_save_cell_type(
         WTs, NLGFs, area_map
     )
-    plot_noise_levels(WTs, NLGFs)
+    # plot_exc_inh_ratio(cluster_dataframe, area_map)
+    # plot_cluster_characteristics(
+    #     cluster_dataframe,
+    #     area_map,
+    #     ["mfr_resting", "firing_rate_modulation"],
+    #     ["Hz", "AU"],
+    # )
 
-    WTs, NLGFs = filter_ripples(WTs, NLGFs)
-    plot_single_ripples(WTs, NLGFs)
-
-    groups = ["pos_responders", "neg_responders", "all_cells"]
-    area_map = {"dg-": "dentate", "ca1": "ca1", "rsp": "retrosplenial"}
-    padding_firing_around_ripples = 0.5  # in seconds
-
-    plot_ripple_triggered_firing_per_cluster_first(
-        WTs, NLGFs, area_map, padding_firing_around_ripples, good_units_only=True
-    )
+    # WTs, NLGFs = filter_ripples(WTs, NLGFs)
+    # number_of_ripples_plot(WTs, NLGFs)
+    # plot_single_ripples(WTs, NLGFs)
+    # spikes_per_ripple(WTs, NLGFs)
+    # resting_time_ripple_rate_correlation(WTs, NLGFs)
+    # plot_ripple_triggered_firing_per_cluster_first(
+    #     WTs, NLGFs, area_map, padding_firing_around_ripples, good_units_only=True
+    # )
 
     ripple_dataframe = build_dataframe_per_ripple(
-        WTs, NLGFs, area_map, groups, padding_firing_around_ripples
+        WTs, NLGFs, area_map, groups, padding_firing_around_ripples, cell_types
     )
     plot_heatmap_firing_around_ripple_per_session(
-        ripple_dataframe, area="ca1", padding_seconds=padding_firing_around_ripples
+        ripple_dataframe,
+        area="ca1",
+        padding_seconds=padding_firing_around_ripples,
     )
+
     plot_firing_around_ripple_MUA_per_ripple_first(
-        ripple_dataframe, area_map, groups, padding_firing_around_ripples
+        ripple_dataframe,
+        area_map,
+        groups,
+        padding_firing_around_ripples,
+        cell_types,
     )
-    plot_distributions_violins_anim_means_per_characteristic(ripple_dataframe)
 
     characteristics_ripples = ["Strength", "Frequency", "Duration", "Amplitude"]
     characteristics_response = [
-        "Peak_response_ca1_pos_responders",
-        "Peak_response_retrosplenial_pos_responders",
-        "Peak_response_dentate_pos_responders",
-        "Peak_response_ca1_all_cells",
-        "Peak_response_retrosplenial_all_cells",
-        "Peak_response_dentate_all_cells",
-        "Percentage_pos_resp_ca1",
-        "Percentage_pos_resp_retrosplenial",
-        "Percentage_pos_resp_dentate",
-        "Percentage_neg_resp_ca1",
-        "Percentage_neg_resp_retrosplenial",
-        "Percentage_neg_resp_dentate",
-        "Percentage_non_resp_ca1",
-        "Percentage_non_resp_retrosplenial",
-        "Percentage_non_resp_dentate",
+        characteristic
+        for characteristic in np.array(ripple_dataframe.columns)[14::]
+        if "all_cells" in characteristic
+        if "Spiking" not in characteristic
+        if "Percentage" not in characteristic
+        # if "all_cells" not in characteristic  # if "Spiking" not in characteristic
     ]
     plot_correlations(
         ripple_dataframe, characteristics_ripples, characteristics_response
     )
 
-    spikes_per_ripple(WTs, NLGFs)
-    resting_time_ripple_rate_correlation(WTs, NLGFs)
+    y_labels_characteristic = np.full(len(characteristics_response), "AU").tolist()
+    plot_distributions_violins_anim_means_per_characteristic(
+        ripple_dataframe, characteristics_response, y_labels_characteristic
+    )
