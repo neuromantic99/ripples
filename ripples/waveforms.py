@@ -179,6 +179,18 @@ def calculate_waveform_trough_to_peak_time(waveform: np.ndarray) -> float:
     return TP_distance
 
 
+def calculate_waveform_trough_to_peak_time_new(waveform: np.ndarray) -> float:
+    """adapted from open ephys github repository"""
+
+    trough_idx = np.argmin(waveform)
+    peak_idx = np.argmax(waveform[trough_idx:]) + trough_idx
+
+    time = np.arange(0, 61)
+    TP_distance = np.abs(peak_idx - trough_idx)
+
+    return TP_distance
+
+
 def get_waveform_metrics(
     directory: str, spiketimes: np.ndarray, spikeclusters: np.ndarray
 ) -> dict:
@@ -206,7 +218,7 @@ def get_waveform_metrics(
     return results
 
 
-def do_clustering_and_plot(all_data: pd.DataFrame) -> np.array:
+def do_clustering_and_plot(all_data: pd.DataFrame) -> np.ndarray:
     aligned_wf = np.vstack(all_data["aligned_waveforms"])
     cell_type = np.full(len(aligned_wf), "")
 
@@ -224,32 +236,8 @@ def do_clustering_and_plot(all_data: pd.DataFrame) -> np.array:
     plt.plot(aligned_wf[bad_clusters].T)
     plt.title("Excluded Clusters")
 
-    # gmm_pca = GaussianMixture(n_components=4, reg_covar=0.001, max_iter=50)
-    # gmm_pca.fit(pcas_wf)
-    # idx_pca = np.array(gmm_pca.predict(pcas_wf))
-    # counts_cluster = [
-    #     np.count_nonzero(idx_pca == 0),
-    #     np.count_nonzero(idx_pca == 1),
-    #     np.count_nonzero(idx_pca == 2),
-    #     np.count_nonzero(idx_pca == 3),
-    # ]
-    # max_cluster = np.argmax(counts_cluster)
-
-    # plt.figure()
-    # plt.scatter(
-    #     pcas_wf[idx_pca == max_cluster, 0], pcas_wf[idx_pca == max_cluster, 1], c="red"
-    # )
-    # plt.scatter(
-    #     pcas_wf[idx_pca != max_cluster, 0], pcas_wf[idx_pca != max_cluster, 1], c="blue"
-    # )
-    # plt.legend(["Good", "Exclude"])
-    # plt.show()
-    # good_cluster = idx_pca == max_cluster
-
     # Data (n Samples, d Features)
-    data = np.vstack(
-        (all_data["valley_to_peak_time"], all_data["fullwidth_at_third_max"])
-    ).T
+    data = np.vstack((all_data["New_PT"], all_data["fullwidth_at_third_max"])).T
     data[np.isnan(data)] = 0
 
     gmm = GaussianMixture(n_components=4, reg_covar=0.001, max_iter=50)
@@ -339,28 +327,6 @@ def main() -> None:
     plt.plot(aligned_wf[bad_clusters].T)
     plt.title("Excluded Clusters")
     plt.show()
-
-    # gmm_pca = GaussianMixture(n_components=4, reg_covar=0.001, max_iter=50)
-    # gmm_pca.fit(pcas_wf)
-    # idx_pca = np.array(gmm_pca.predict(pcas_wf))
-    # counts_cluster = [
-    #     np.count_nonzero(idx_pca == 0),
-    #     np.count_nonzero(idx_pca == 1),
-    #     np.count_nonzero(idx_pca == 2),
-    #     np.count_nonzero(idx_pca == 3),
-    # ]
-    # max_cluster = np.argmax(counts_cluster)
-
-    # plt.figure()
-    # plt.scatter(
-    #     pcas_wf[idx_pca == max_cluster, 0], pcas_wf[idx_pca == max_cluster, 1], c="red"
-    # )
-    # plt.scatter(
-    #     pcas_wf[idx_pca != max_cluster, 0], pcas_wf[idx_pca != max_cluster, 1], c="blue"
-    # )
-    # plt.legend(["Good", "Exclude"])
-    # plt.show()
-    # good_cluster = idx_pca == max_cluster
 
     good_cluster = ~bad_clusters
     aligned_wf_sorted = aligned_wf[good_cluster]
