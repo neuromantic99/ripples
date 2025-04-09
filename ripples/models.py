@@ -40,6 +40,7 @@ class CandidateEvent(BaseModel):
     bandpower_ripple: float
     strength: float
     detection_channel: int
+    instantaneous_frequency: float
     raw_lfp: List[float]
 
 

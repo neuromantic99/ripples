@@ -76,6 +76,24 @@ def get_event_frequency(
         return 1
 
 
+def calculate_instantaneous_frequency(
+    data: np.ndarray, sampling_rate: float
+) -> np.ndarray:
+    "Following the approach described in Supplements of Buzsaki, G Schmitz; D PNAS Paper"
+    "data: 1D np.array"
+
+    phase = signal.medfilt(np.unwrap(np.angle(signal.hilbert(data))))
+    inst_freq = np.array(
+        [
+            (np.abs(phase[idx + 1] - phase[idx - 1]))
+            / (2 * np.pi * (2 / sampling_rate))
+            for idx in range(1, len(data) - 1)
+        ]
+    )
+
+    return inst_freq
+
+
 def compute_envelope(lfp: np.ndarray) -> np.ndarray:
     hilbert_transformed = signal.hilbert(lfp, axis=1)
     return np.abs(hilbert_transformed)
@@ -127,7 +145,7 @@ def compute_power(filtered_data: np.ndarray) -> np.ndarray:
     Returns:
     - power: ndarray (n_channels,), average power in each channel
 
-    This is approximately the same as matlab bandpower It is approximately the same as matlab
+    This is approximately the same as matlab bandpower
     """
     return np.mean(filtered_data**2, axis=1)
 
@@ -155,24 +173,13 @@ def interleave_arrays(a: np.ndarray, b: np.ndarray) -> np.ndarray:
     return c
 
 
-def mean_across_same_session(sessions: List[SessionToAverage]) -> List[float]:
-
-    data_dict: defaultdict[str, dict] = defaultdict(lambda: {"sum": 0, "count": 0})
-    # Populate the dictionary with sums and counts
-    for session in sessions:
-        data_dict[session.id]["sum"] += session.data
-        data_dict[session.id]["count"] += 1
-
-    return [value["sum"] / value["count"] for value in data_dict.values()]
-
-
 def mean_across_sessions(sessions: List[SessionToAverage]) -> np.ndarray:
 
     data_dict: defaultdict[str, dict] = defaultdict(lambda: {"sum": 0, "count": 0})
     # Populate the dictionary with sums and counts
     for session in sessions:
         # in case one recording doesn'T have any positive or negative responders to ripples (noise, lots of running)
-        if ~np.isnan(sum(session.data)):
+        if ~np.isnan(np.sum(session.data)):
             data_dict[session.id]["sum"] += session.data
             data_dict[session.id]["count"] += 1
 
