@@ -171,6 +171,7 @@ def plot_resting_ripples(
     max_time: float,
     ripples: List[CandidateEvent],
     resting_ind: np.ndarray,
+    resting_ind_strict: np.ndarray,
     speed_cm_per_s: np.ndarray,
     sampling_rate: float,
     recording_id: str,
@@ -183,23 +184,16 @@ def plot_resting_ripples(
 
     plt.figure()
     plt.plot(speed_cm_per_s[::2500])
-    plt.plot(resting_ind[::2500])
+    plt.plot(resting_ind[::2500], ".", markersize=6)
+    plt.plot(resting_ind_strict)
     plt.scatter(onset_times_in_sec, y_vec)
+    plt.legend(["speed", "resting_ind", "resting_ind_strict", "ripple peak times"])
 
     figure_path = RESULTS_PATH / "figures" / "Resting_ripples"
     if not figure_path.exists():
         os.makedirs(figure_path)
 
     plt.savefig(figure_path / f"{recording_id}_resting_ripples.png")
-
-    # more detailed plot
-    # plt.figure()
-    # xvec= range(len(resting_ind))
-    # plt.scatter(xvec,resting_ind)
-    # plt.plot(resting_ind, 'red')
-    # y_vec = np.ones(len(ripples))-0.5
-    # plt.scatter([ripple.onset for ripple in ripples], y_vec)
-    # plt.plot(speed_cm_per_s, 'green')
 
 
 def plot_lfp_spectrogram(
