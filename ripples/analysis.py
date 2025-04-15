@@ -463,7 +463,7 @@ def get_resting_and_locomotion_periods(
     locomotion_periods = []
     resting_time = 0
     locomotion_time = 0
-    resting_ind_strict = np.full(len(resting_ind) + 1, 0, dtype=bool)
+    resting_ind_strict = np.full(len(resting_ind), 0, dtype=bool)
     for behaviour_period in range(len(split_indices)):
         if behaviour_period == 0:
             if np.logical_and(resting_ind[0], split_indices[behaviour_period] > 1):
@@ -471,7 +471,7 @@ def get_resting_and_locomotion_periods(
                 resting_time = resting_time + split_indices[behaviour_period]
                 resting_ind_strict[0 : split_indices[behaviour_period]] = 1
             elif np.logical_and(
-                resting_ind[0] == False, split_indices[behaviour_period] > 1
+                not resting_ind[0], split_indices[behaviour_period] > 1
             ):
                 locomotion_periods.append([0, split_indices[behaviour_period]])
                 locomotion_time = locomotion_time + split_indices[behaviour_period]
@@ -490,7 +490,7 @@ def get_resting_and_locomotion_periods(
                     split_indices[behaviour_period] : len(resting_ind)
                 ] = 1
             elif np.logical_and(
-                resting_ind[split_indices[behaviour_period]] == False,
+                not resting_ind[split_indices[behaviour_period]],
                 len(resting_ind) - split_indices[behaviour_period] > 1,
             ):
                 locomotion_periods.append(
@@ -521,7 +521,7 @@ def get_resting_and_locomotion_periods(
                     ]
                 ] = 1
             if np.logical_and(
-                resting_ind[split_indices[behaviour_period - 1]] == False,
+                not resting_ind[split_indices[behaviour_period - 1]],
                 (split_indices[behaviour_period] - split_indices[behaviour_period - 1])
                 > 1,
             ):
@@ -535,6 +535,7 @@ def get_resting_and_locomotion_periods(
                     split_indices[behaviour_period]
                     - split_indices[behaviour_period - 1]
                 )
+    assert len(resting_ind_strict) == len(resting_ind)
     return (
         resting_periods,
         locomotion_periods,

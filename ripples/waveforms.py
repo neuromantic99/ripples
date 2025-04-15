@@ -82,7 +82,7 @@ def get_waveforms(gwfparams: dict) -> dict:
             wave_forms_mean_max_channel[i, :] / min(wave_forms_mean_max_channel[i, :])
         )
 
-        halfwidth_at_third_max[i] = calculate_waveform_halfwidth(
+        halfwidth_at_third_max[i] = calculate_waveform_fullwidth(
             wave_forms_mean_norm[i, :], 0.3
         )
         trough_to_peak_time[i] = calculate_waveform_trough_to_peak_time(
@@ -118,7 +118,7 @@ def get_waveforms(gwfparams: dict) -> dict:
     }
 
 
-def calculate_waveform_halfwidth(waveform: np.ndarray, level: float) -> float:
+def calculate_waveform_fullwidth(waveform: np.ndarray, level: float) -> float:
     """
     Spike width at certain level of the trough amplitude
     adapted from  Rev 1.2, April 2006 (Patrick Egan) Matlab version
@@ -160,8 +160,8 @@ def calculate_waveform_halfwidth(waveform: np.ndarray, level: float) -> float:
     t_trail = interp1d(waveform_abs[i - 1 : i + 1], timestamps[i - 1 : i + 1])(
         level
     )  # Interpolation
-
-    return t_trail - t_lead
+    # devide by 30 so that it is in ms
+    return (t_trail - t_lead) / 30
 
 
 def calculate_waveform_trough_to_peak_time(waveform: np.ndarray) -> float:
@@ -171,24 +171,9 @@ def calculate_waveform_trough_to_peak_time(waveform: np.ndarray) -> float:
     peak_idx = np.argmax(waveform[trough_idx:]) + trough_idx
 
     time = np.arange(0, 61)
-    trough_idx_new = np.interp(trough_idx, time, waveform)
-    peak_idx_new = np.interp(peak_idx, time, waveform)
-
-    TP_distance = np.abs(peak_idx_new - trough_idx_new)
-
-    return TP_distance
-
-
-def calculate_waveform_trough_to_peak_time_new(waveform: np.ndarray) -> float:
-    """adapted from open ephys github repository"""
-
-    trough_idx = np.argmin(waveform)
-    peak_idx = np.argmax(waveform[trough_idx:]) + trough_idx
-
-    time = np.arange(0, 61)
     TP_distance = np.abs(peak_idx - trough_idx)
-
-    return TP_distance
+    # deviding by 30 at a sampling rate of 30.000 Hz to convert in ms
+    return TP_distance / 30
 
 
 def get_waveform_metrics(
@@ -218,9 +203,27 @@ def get_waveform_metrics(
     return results
 
 
-def do_clustering_and_plot(all_data: pd.DataFrame) -> np.ndarray:
+def detect_noisy_waveforms(all_data: pd.DataFrame) -> np.ndarray:
     aligned_wf = np.vstack(all_data["aligned_waveforms"])
-    cell_type = np.full(len(aligned_wf), "")
+
+    # pca_model = PCA(n_components=2)
+    # pcas_wf = pca_model.fit_transform(aligned_wf)
+
+    # gmm = GaussianMixture(n_components=2, reg_covar=0.001, max_iter=50)
+    # gmm.fit(pcas_wf)
+    # idx = gmm.predict(pcas_wf)
+    # good_units = np.argmax([sum(idx == 0), sum(idx == 1)])
+
+    # plt.figure()
+    # plt.plot(pcas_wf[:, 0][idx == 0], pcas_wf[:, 1][idx == 0], ".")
+    # plt.plot(pcas_wf[:, 0][idx == 1], pcas_wf[:, 1][idx == 1], ".")
+    # plt.legend(["0", "1"])
+    # plt.title("Good Cluster:" + str(good_units))
+    # plt.show()
+
+    # assert len(all_data) == idx.shape[0]
+    # label_noisy = np.full(len(all_data), "O")
+    # label_noisy[idx != good_units] = "N"
 
     pca_model = PCA(n_components=2)
     pcas_wf = pca_model.fit_transform(aligned_wf)
@@ -236,9 +239,20 @@ def do_clustering_and_plot(all_data: pd.DataFrame) -> np.ndarray:
     plt.plot(aligned_wf[bad_clusters].T)
     plt.title("Excluded Clusters")
 
+    label_noisy = np.full(len(all_data), "O")
+    label_noisy[bad_clusters] = "N"
+
+    return label_noisy
+
+
+def do_clustering_and_plot(all_data: pd.DataFrame) -> np.ndarray:
+    aligned_wf = np.vstack(all_data["aligned_waveforms"])
+    cell_type = np.full(len(aligned_wf), "")
+
     # Data (n Samples, d Features)
-    data = np.vstack((all_data["New_PT"], all_data["fullwidth_at_third_max"])).T
-    data[np.isnan(data)] = 0
+    data = np.vstack(
+        (all_data["valley_to_peak_time"], all_data["fullwidth_at_third_max"])
+    ).T
 
     gmm = GaussianMixture(n_components=4, reg_covar=0.001, max_iter=50)
     gmm.fit(data)
@@ -247,6 +261,7 @@ def do_clustering_and_plot(all_data: pd.DataFrame) -> np.ndarray:
     cluster1 = data[idx == 1]
     cluster2 = data[idx == 2]
     cluster3 = data[idx == 3]
+    # cluster4 = data[idx == 4]
     ind_inhibitory = np.argmin(
         [
             sum(np.mean(cluster0, axis=0)),
@@ -258,12 +273,13 @@ def do_clustering_and_plot(all_data: pd.DataFrame) -> np.ndarray:
 
     cell_type[idx == ind_inhibitory] = "I"
     cell_type[idx != ind_inhibitory] = "E"
-    cell_type[bad_clusters] = "N"
 
     plt.figure()
     plt.suptitle(all_data["region"].tolist()[0])
-    plt.scatter(data[cell_type == "I"][:, 0], data[cell_type == "I"][:, 1], c="red")
-    plt.scatter(data[cell_type == "E"][:, 0], data[cell_type == "E"][:, 1], c="blue")
+    plt.scatter(data[cell_type == "I"][:, 1], data[cell_type == "I"][:, 0], c="red")
+    plt.scatter(data[cell_type == "E"][:, 1], data[cell_type == "E"][:, 0], c="blue")
+    plt.xlabel("Fullwidth at 1/3 Maximum (ms)")
+    plt.ylabel("Valley to peak time (ms)")
     plt.legend(["Putative inhibitory", "Putative excitatory"])
     plt.figure()
     plt.suptitle(all_data["region"].tolist()[0])
