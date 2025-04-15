@@ -6,9 +6,10 @@ from scipy import io
 from ripples.utils import (
     bandpass_filter,
     forward_fill,
-    mean_across_same_session,
     get_event_frequency,
     bandpower,
+    calculate_instantaneous_frequency,
+    mean_across_sessions,
 )
 
 from ripples.consts import HERE
@@ -72,7 +73,7 @@ def test_forward_fill() -> None:
     assert np.array_equal(result, np.array([1, 1, 1, 4, 4, 6, 6, 6, 9]))
 
 
-def test_mean_across_same_session_no_nesting() -> None:
+def test_mean_across_sessions_no_nesting() -> None:
     class Session:
         def __init__(self, session_id: str, data: float):
             self.id = session_id
@@ -80,16 +81,16 @@ def test_mean_across_same_session_no_nesting() -> None:
 
     sessions = [Session("1", 10), Session("1", 20), Session("2", 30), Session("2", 40)]
 
-    result = mean_across_same_session(sessions)  # type: ignore
+    result = mean_across_sessions(sessions)  # type: ignore
     expected = [
         15.0,
         35.0,
     ]
 
-    assert result == expected, f"Expected {expected} but got {result}"
+    assert np.all(result == expected), f"Expected {expected} but got {result}"
 
 
-def test_mean_across_same_session_another_one() -> None:
+def test_mean_across_sessions_another_one() -> None:
 
     class Session:
         def __init__(self, session_id: str, data: float):
@@ -104,7 +105,19 @@ def test_mean_across_same_session_another_one() -> None:
         Session("3", 1000),
     ]
 
-    result = mean_across_same_session(sessions)  # type: ignore
+    result = mean_across_sessions(sessions)  # type: ignore
     expected = [15.0, 35.0, 1000]
 
-    assert result == expected, f"Expected {expected} but got {result}"
+    assert np.all(result == expected), f"Expected {expected} but got {result}"
+
+
+def test_calculate_instantaneous_frequency() -> None:
+
+    # create a signal with a frequency of 0.5 Hz
+    x = np.linspace(-np.pi, np.pi, 201)
+    test_signal = np.sin(x)
+    fs = 100
+
+    result = calculate_instantaneous_frequency(test_signal, fs)
+    assert np.all(np.round(result[1:-2], decimals=1) == 0.5)
+    # [1:-2] to account for boarder artefacts

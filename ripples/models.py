@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from enum import Enum
-from typing import List
+from typing import List, Optional, Any
 
 import numpy as np
 from pydantic import BaseModel
@@ -20,6 +20,15 @@ class ClusterInfo:
     channel: int
     depth: float
     good_cluster: bool
+    MFR_resting: float | str
+    Firing_rate_modulation: float | str
+    cell_type: float | str
+    ripple_modulation: float | str
+    wf_max_channel: int
+    waveform_mean_norm: List
+    aligned_wf: List
+    valley_to_peak_time: float
+    halfwidth_at_third_max: float
 
 
 class CandidateEvent(BaseModel):
@@ -31,6 +40,7 @@ class CandidateEvent(BaseModel):
     bandpower_ripple: float
     strength: float
     detection_channel: int
+    instantaneous_frequency: float
     raw_lfp: List[float]
 
 
@@ -60,12 +70,19 @@ class Session(BaseModel):
     clusters_info: List[ClusterInfo]
     id: str
     baseline: str
+    unique_id: str
     length_seconds: float
     rms_per_channel: List[float]
     sampling_rate_lfp: float
     detection_method: str
     CA1_channels_analysed: List[int]
     CA1_channels_swr_pow: List[float]
+    resting_ind: List[bool]
+    resting_ind_strict: List[bool]
+    resting_periods_ind: List[List[int]]
+    locomotion_periods_ind: List[List[int]]
+    resting_time_strict: int
+    locomotion_time_strict: int
 
 
 class ProbeCoordinate(BaseModel):

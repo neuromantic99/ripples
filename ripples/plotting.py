@@ -6,6 +6,7 @@ import numpy as np
 from matplotlib import cm
 from matplotlib import pyplot as plt
 from scipy.stats import zscore
+from scipy import signal
 import seaborn as sns
 
 
@@ -170,6 +171,7 @@ def plot_resting_ripples(
     max_time: float,
     ripples: List[CandidateEvent],
     resting_ind: np.ndarray,
+    resting_ind_strict: np.ndarray,
     speed_cm_per_s: np.ndarray,
     sampling_rate: float,
     recording_id: str,
@@ -182,23 +184,16 @@ def plot_resting_ripples(
 
     plt.figure()
     plt.plot(speed_cm_per_s[::2500])
-    plt.plot(resting_ind[::2500])
+    plt.plot(resting_ind[::2500], ".", markersize=6)
+    plt.plot(resting_ind_strict)
     plt.scatter(onset_times_in_sec, y_vec)
+    plt.legend(["speed", "resting_ind", "resting_ind_strict", "ripple peak times"])
 
     figure_path = RESULTS_PATH / "figures" / "Resting_ripples"
     if not figure_path.exists():
         os.makedirs(figure_path)
 
     plt.savefig(figure_path / f"{recording_id}_resting_ripples.png")
-
-    # more detailed plot
-    # plt.figure()
-    # xvec= range(len(resting_ind))
-    # plt.scatter(xvec,resting_ind)
-    # plt.plot(resting_ind, 'red')
-    # y_vec = np.ones(len(ripples))-0.5
-    # plt.scatter([ripple.onset for ripple in ripples], y_vec)
-    # plt.plot(speed_cm_per_s, 'green')
 
 
 def plot_lfp_spectrogram(
@@ -207,6 +202,7 @@ def plot_lfp_spectrogram(
     region_channel: List[str],
     recording_id: str,
     sampling_rate_lfp: float,
+    max_power_chan_ca1: int,
 ) -> None:
 
     # get longest resting period based on resting_ind
@@ -245,10 +241,13 @@ def plot_lfp_spectrogram(
     result = np.flipud(result)
 
     plt.figure()
+    plt.subplot(1, 2, 1)
     sns.heatmap(
         result,
         square=False,
         cmap=sns.color_palette("YlOrBr", as_cmap=True),
+        vmin=-6,
+        vmax=6,
         cbar_kws={"label": "Log power"},
     )
     plt.xticks(range(len(edges)), edges)
@@ -257,6 +256,57 @@ def plot_lfp_spectrogram(
     )
     plt.xlabel("Frequency (Hz)")
     plt.ylabel("Channel")
+
+    b, a = signal.iirnotch(50, 30, sampling_rate_lfp)
+    lfp_filtered = signal.filtfilt(b, a, lfp_longest_resting_period, axis=1)
+
+    max_freq = 550
+    edges = (
+        list(range(2, 10, 1))
+        + list(range(10, 100, 10))
+        + list(range(100, max_freq, 50))
+    )
+
+    result = []
+    for idx in range(len(edges) - 1):
+        start = edges[idx]
+        end = edges[idx + 1]
+
+        result.append(
+            compute_power(
+                bandpass_filter(lfp_filtered, start, end, sampling_rate_lfp, order=4)
+            )
+        )
+
+    result = np.array(result).T
+    result = np.log(result)
+    result = np.flipud(result)
+
+    plt.subplot(1, 2, 2)
+    sns.heatmap(
+        result,
+        square=False,
+        cmap=sns.color_palette("YlOrBr", as_cmap=True),
+        vmin=-6,
+        vmax=6,
+        cbar_kws={"label": "Log power"},
+    )
+    plt.xticks(range(len(edges)), edges)
+    # plt.yticks(
+    #     np.flipud(np.array(range(384))[0:-1:15]), np.array(region_channel)[0:-1:15]
+    # )
+    plt.xlabel("Frequency (Hz)")
+    plt.ylabel("Channel")
+
+    f, power = signal.welch(
+        lfp[max_power_chan_ca1, resting_ind][0:5000], sampling_rate_lfp
+    )
+    peaks, _ = signal.find_peaks(power)
+    # same condition as in ripple detection
+    if 49 in np.round(f[peaks]) or 50 in np.round(f[peaks]) or 51 in np.round(f[peaks]):
+        plt.title("50 Hz applied for reipple detection")
+    else:
+        plt.title("No filter used for ripple detection")
 
     figure_path = RESULTS_PATH / "figures" / "lfp_spectrograms"
     if not figure_path.exists():
