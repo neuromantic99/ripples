@@ -12,5 +12,5 @@ seaborn
 nptyping
 imageio
 napari[all]
-npyx
+npyx @ git+https://github.com/neuromantic99/NeuroPyxels.git
 PyWavelets
