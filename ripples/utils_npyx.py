@@ -7,6 +7,44 @@ from ripples.utils import threshold_detect
 """Put the npyx import into its own file as it confuses pytest"""
 
 
+def load_sync_npyx(data_path: str) -> Tuple[np.ndarray, np.ndarray, float]:
+    return get_npix_sync(data_path, output_binary=True, filt_key="lowpass")
+
+
+def load_lfp_reactivations(
+    data_path: str, chunk_start_seconds: float, chunk_end_seconds: float
+) -> Tuple[np.ndarray, np.ndarray, float]:
+
+    meta = read_metadata(data_path)
+
+    lfp = extract_rawChunk(
+        data_path,
+        [
+            chunk_start_seconds,
+            chunk_end_seconds,
+        ],  # now taking the recording length as a float
+        channels=np.arange(384),
+        filt_key="lowpass",  # NPX data is devided in "high-pass" = spiking data and "low-pass" = LFP, no filter is being applied
+        save=0,
+        whiten=0,
+        med_sub=False,
+        hpfilt=False,
+        hpfiltf=0,
+        filter_forward=False,
+        filter_backward=False,
+        nRangeWhiten=None,
+        nRangeMedSub=None,
+        use_ks_w_matrix=True,
+        ignore_ks_chanfilt=True,
+        center_chans_on_0=False,
+        verbose=True,
+        scale=False,
+        again=False,
+    )
+
+    return lfp
+
+
 def load_lfp_npyx(data_path: str) -> Tuple[np.ndarray, np.ndarray, float]:
     meta = read_metadata(data_path)
     sync = get_npix_sync(data_path, output_binary=True, filt_key="lowpass")
